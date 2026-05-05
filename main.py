@@ -57,7 +57,7 @@ GEMINI_PRICING = {
 # Per-task generation config — tuned independently because Task 1 scans the whole
 # PDF (reasoning-heavy) while Task 2 reads a single cover-letter page.
 TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 8192, "timeout_s": 180}
-TASK2_CONFIG = {"temperature": 0.0, "thinking_budget": 8192, "timeout_s": 180}
+TASK2_CONFIG = {"temperature": 0.1, "thinking_budget": 8192, "timeout_s": 180}
 
 # Return types eligible for PTE elective tax (hard whitelist, also enforced in prompt).
 PTE_ELIGIBLE_RETURN_TYPES = {"S-Corporation (1120S)", "Partnership (1065)"}
@@ -823,7 +823,7 @@ Examples:
         sys.exit(1)
 
     # ── Output directory ──
-    output_dir = Path(args.output_dir).resolve() if args.output_dir else pdf_path.parent / "output"
+    output_dir = Path(args.output_dir).resolve() if args.output_dir else Path(__file__).parent / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── API key ──
