@@ -26,6 +26,7 @@ import argparse
 import re
 from pathlib import Path
 from datetime import datetime
+import time
 
 try:
     import fitz  # pymupdf
@@ -49,15 +50,15 @@ DEFAULT_MODEL = "gemini-3-flash-preview"
 
 # Gemini pricing per 1M tokens (USD) — update when pricing changes
 GEMINI_PRICING = {
-    "input_per_1m": 0.15,
-    "output_per_1m": 0.60,
-    "thinking_per_1m": 3.50,
+    "input_per_1m": 0.5,
+    "output_per_1m": 3.00,
+    "thinking_per_1m": 3.00,
 }
 
 # Per-task generation config — tuned independently because Task 1 scans the whole
 # PDF (reasoning-heavy) while Task 2 reads a single cover-letter page.
-TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 8192, "timeout_s": 180}
-TASK2_CONFIG = {"temperature": 0.1, "thinking_budget": 8192, "timeout_s": 180}
+TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 8192, "timeout_s": 240}
+TASK2_CONFIG = {"temperature": 0.1, "thinking_budget": 2048, "timeout_s": 240}
 
 # Return types eligible for PTE elective tax (hard whitelist, also enforced in prompt).
 PTE_ELIGIBLE_RETURN_TYPES = {"S-Corporation (1120S)", "Partnership (1065)"}
@@ -431,21 +432,31 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
     tag = f"[{label}] " if label else ""
     print(f"   📡 {tag}Sending to Gemini ({model}, {pdf_size_kb:.1f} KB)...")
 
-    try:
-        with urllib.request.urlopen(req, timeout=config["timeout_s"]) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8")
-        print(f"\n   ❌ Gemini API Error (HTTP {e.code}):")
+    result = None
+    for attempt in range(2):
         try:
-            err = json.loads(error_body)
-            print(f"      {err.get('error', {}).get('message', error_body[:500])}")
-        except json.JSONDecodeError:
-            print(f"      {error_body[:500]}")
-        sys.exit(1)
-    except urllib.error.URLError as e:
-        print(f"\n   ❌ Network Error: {e.reason}")
-        sys.exit(1)
+            with urllib.request.urlopen(req, timeout=config["timeout_s"]) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            break
+        except (TimeoutError, ConnectionResetError) as e:
+            if attempt == 0:
+                print(f"\n   ⚠️  {tag}Timeout, retrying once...")
+                time.sleep(3)
+                continue
+            print(f"\n   ❌ Request timed out after 2 attempts.")
+            sys.exit(1)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            print(f"\n   ❌ Gemini API Error (HTTP {e.code}):")
+            try:
+                err = json.loads(error_body)
+                print(f"      {err.get('error', {}).get('message', error_body[:500])}")
+            except json.JSONDecodeError:
+                print(f"      {error_body[:500]}")
+            sys.exit(1)
+        except urllib.error.URLError as e:
+            print(f"\n   ❌ Network Error: {e.reason}")
+            sys.exit(1)
 
     # ── Token usage & cost ──
     usage = result.get("usageMetadata", {})
