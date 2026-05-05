@@ -1,0 +1,21 @@
+# ── Python cache ──
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── Input / output ──
+# PDF files contain client PII — never commit
+*.pdf
+# Generated output files
+output/
+# DOCX outputs
+*.docx
+
+# ── Environment ──
+.env
+.env.*
+!.env.example
+
+# ── Debug / scratch scripts ──
+read_files.py
+read_docx.py
