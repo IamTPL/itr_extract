@@ -58,7 +58,7 @@ GEMINI_PRICING = {
 # Per-task generation config — tuned independently because Task 1 scans the whole
 # PDF (reasoning-heavy) while Task 2 reads a single cover-letter page.
 TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 4096, "timeout_s": 180}
-TASK2_CONFIG = {"temperature": 0.1, "thinking_budget": 4096, "timeout_s": 150}
+TASK2_CONFIG = {"temperature": 0.1, "thinking_budget": 6144, "timeout_s": 180}
 
 # Return types eligible for PTE elective tax (hard whitelist, also enforced in prompt).
 PTE_ELIGIBLE_RETURN_TYPES = {"S-Corporation (1120S)", "Partnership (1065)"}
@@ -512,11 +512,17 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
     }
 
     try:
-        return json.loads(cleaned), token_usage
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
         print(f"   ❌ JSON parse error: {e}")
         print(f"      Raw response (first 500 chars): {text_content[:500]}")
         sys.exit(1)
+
+    # Guard: unwrap if model wrapped response in a single-element array
+    if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+        parsed = parsed[0]
+
+    return parsed, token_usage
 
 
 # ═══════════════════════════════════════════════════════════════════
