@@ -27,6 +27,8 @@ import re
 from pathlib import Path
 from datetime import datetime
 import time
+import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import fitz  # pymupdf
@@ -57,8 +59,8 @@ GEMINI_PRICING = {
 
 # Per-task generation config — tuned independently because Task 1 scans the whole
 # PDF (reasoning-heavy) while Task 2 reads a single cover-letter page.
-TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 4096, "timeout_s": 180}
-TASK2_CONFIG = {"temperature": 0.1, "thinking_budget": 6144, "timeout_s": 180}
+TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 4096, "timeout_s": 240}
+TASK2_CONFIG = {"temperature": 0.0, "thinking_budget": 0,    "timeout_s": 120}
 
 # Return types eligible for PTE elective tax (hard whitelist, also enforced in prompt).
 PTE_ELIGIBLE_RETURN_TYPES = {"S-Corporation (1120S)", "Partnership (1065)"}
@@ -440,8 +442,8 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
             break
         except (TimeoutError, ConnectionResetError) as e:
             if attempt == 0:
-                print(f"\n   ⚠️  {tag}Timeout, retrying once...")
-                time.sleep(3)
+                print(f"\n   ⚠️  {tag}Timeout, retrying once (30s)...")
+                time.sleep(30)
                 continue
             print(f"\n   ❌ Request timed out after 2 attempts.")
             sys.exit(1)
@@ -455,6 +457,14 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
                 print(f"      {error_body[:500]}")
             sys.exit(1)
         except urllib.error.URLError as e:
+            # urllib wraps socket.timeout as URLError — treat as timeout and retry
+            if isinstance(e.reason, (TimeoutError, socket.timeout)):
+                if attempt == 0:
+                    print(f"\n   ⚠️  {tag}Timeout (connection), retrying once (30s)...")
+                    time.sleep(10)
+                    continue
+                print(f"\n   ❌ Request timed out after 2 attempts.")
+                sys.exit(1)
             print(f"\n   ❌ Network Error: {e.reason}")
             sys.exit(1)
 
@@ -512,7 +522,7 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
     }
 
     try:
-        parsed = json.loads(cleaned)
+        parsed, _ = json.JSONDecoder().raw_decode(cleaned)
     except json.JSONDecodeError as e:
         print(f"   ❌ JSON parse error: {e}")
         print(f"      Raw response (first 500 chars): {text_content[:500]}")
@@ -863,14 +873,16 @@ Examples:
     pdf_bytes = Path(pdf_path).read_bytes()
     page1_bytes = extract_page1_bytes(str(pdf_path))
 
-    # Call 1 — full PDF → e-consent detection
-    task1_data, t1_usage = call_gemini(
-        pdf_bytes, TASK1_PROMPT, TASK1_CONFIG, api_key, args.model, label="Task 1"
-    )
-    # Call 2 — page 1 only → client email data extraction
-    task2_data, t2_usage = call_gemini(
-        page1_bytes, TASK2_PROMPT, TASK2_CONFIG, api_key, args.model, label="Task 2"
-    )
+    # Run both calls in parallel — they're independent inputs
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut1 = executor.submit(
+            call_gemini, pdf_bytes, TASK1_PROMPT, TASK1_CONFIG, api_key, args.model, "Task 1"
+        )
+        fut2 = executor.submit(
+            call_gemini, page1_bytes, TASK2_PROMPT, TASK2_CONFIG, api_key, args.model, "Task 2"
+        )
+        task1_data, t1_usage = fut1.result()
+        task2_data, t2_usage = fut2.result()
 
     analysis_data = {**task2_data, **task1_data}
 
@@ -888,13 +900,15 @@ Examples:
         json.dump(analysis_data, f, indent=2, ensure_ascii=False)
     print(f"   ✅ Analysis complete → {json_out.name}")
 
-    # Token usage & cost
-    print(f"\n   📊 Token Usage (Task 1 + Task 2 combined):")
-    print(f"      Input:    {token_usage['input_tokens']:,} tokens  (${token_usage['input_cost']:.4f})")
-    print(f"      Output:   {token_usage['output_tokens']:,} tokens  (${token_usage['output_cost']:.4f})")
-    if token_usage['thinking_tokens'] > 0:
-        print(f"      Thinking: {token_usage['thinking_tokens']:,} tokens  (${token_usage['thinking_cost']:.4f})")
-    print(f"      Total:    {token_usage['total_tokens']:,} tokens  → ${token_usage['total_cost']:.4f}")
+    # Token usage & cost — per-task breakdown
+    for label, usage in [("Task 1", t1_usage), ("Task 2", t2_usage)]:
+        print(f"\n   📊 Token Usage [{label}]:")
+        print(f"      Input:    {usage['input_tokens']:,} tokens  (${usage['input_cost']:.4f})")
+        print(f"      Output:   {usage['output_tokens']:,} tokens  (${usage['output_cost']:.4f})")
+        if usage['thinking_tokens'] > 0:
+            print(f"      Thinking: {usage['thinking_tokens']:,} tokens  (${usage['thinking_cost']:.4f})")
+        print(f"      Total:    {usage['total_tokens']:,} tokens  → ${usage['total_cost']:.4f}")
+    print(f"\n   💰 Combined cost: ${token_usage['total_cost']:.4f}")
 
     # Summary
     print(f"\n   📋 Return Type:  {analysis_data.get('return_type', '?')}")
