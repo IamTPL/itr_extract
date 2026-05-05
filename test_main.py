@@ -1,6 +1,6 @@
-"""Unit tests for itr_packaging.py pure-logic helpers.
+"""Unit tests for main.py pure-logic helpers.
 
-Run:  python3 scripts/tax-package/test_itr_packaging.py -v
+Run:  python3 test_main.py -v
 """
 import sys
 import unittest
@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from docx import Document
 
-import itr_packaging as itr
+import main as itr
 
 
 class TestMarkdownParagraph(unittest.TestCase):

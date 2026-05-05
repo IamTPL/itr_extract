@@ -12,8 +12,8 @@ tax-package/
 ├── README.md
 ├── .gitignore
 ├── requirements.txt
-├── itr_packaging.py       # Core module
-├── test_itr_packaging.py  # Unit tests
+├── main.py                # Core module
+├── test_main.py  # Unit tests
 ├── samples/               # Sample PDFs dùng để test (gitignored)
 ├── output/                # Generated files (gitignored)
 └── docs/
@@ -46,26 +46,26 @@ Lấy key tại: <https://aistudio.google.com/apikey>
 ## Chạy
 
 ```bash
-python3 itr_packaging.py "samples/<TEN_FILE>.pdf"
+python3 main.py "samples/<TEN_FILE>.pdf"
 ```
 
 ### Ví dụ
 
 ```bash
-python3 itr_packaging.py "samples/Trevor K Holloway DDS Inc ITR 2025 Original.pdf"
+python3 main.py "samples/Trevor K Holloway DDS Inc ITR 2025 Original.pdf"
 ```
 
 ### Options
 
 ```bash
 # Dùng model khác
-python3 itr_packaging.py input.pdf --model gemini-2.5-pro
+python3 main.py input.pdf --model gemini-2.5-pro
 
 # Chỉ định output directory
-python3 itr_packaging.py input.pdf --output-dir ./results
+python3 main.py input.pdf --output-dir ./results
 
 # Chỉ định .env file
-python3 itr_packaging.py input.pdf --env-file /path/to/.env
+python3 main.py input.pdf --env-file /path/to/.env
 ```
 
 ## Output
@@ -85,12 +85,12 @@ Script thực hiện 2 lời gọi Gemini tuần tự:
 1. **Task 1 — E-Consent Detection**: gửi toàn bộ PDF, quét tìm các trang e-file authorization (Form 8879, 8453, FTB 8453...).
 2. **Task 2 — Email Data Extraction**: chỉ gửi page 1 (cover letter) để trích xuất dữ liệu email và sinh các câu tóm tắt tax payment summary theo 5 pattern nghiệp vụ (Balance due / Overpayment credited / Refund deposited / Partial credit + partial refund / Zero outcome). AI dùng Markdown `**bold**` cho keyword + số tiền, Python parse thành bold runs trong DOCX.
 
-Config mỗi task (temperature, thinking_budget, timeout) nằm ở `TASK1_CONFIG` / `TASK2_CONFIG` trong `itr_packaging.py`. PTE payments được gate 2 lớp (prompt + code whitelist `return_type`) — chỉ render cho S-Corp (1120S) và Partnership (1065).
+Config mỗi task (temperature, thinking_budget, timeout) nằm ở `TASK1_CONFIG` / `TASK2_CONFIG` trong `main.py`. PTE payments được gate 2 lớp (prompt + code whitelist `return_type`) — chỉ render cho S-Corp (1120S) và Partnership (1065).
 
 Chi tiết thiết kế: [`docs/architecture.md`](docs/architecture.md)
 
 ## Unit tests
 
 ```bash
-python3 test_itr_packaging.py -v
+python3 test_main.py -v
 ```
