@@ -19,3 +19,6 @@ output/
 # ── Debug / scratch scripts ──
 read_files.py
 read_docx.py
+
+# Agent
+.agents
