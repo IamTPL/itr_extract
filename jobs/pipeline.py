@@ -2,11 +2,18 @@
 import fitz
 from concurrent.futures import ThreadPoolExecutor
 import main as itr
+from config.settings import get_settings
 from jobs.email_html import generate_email_html
+
+# Hard cap mỗi Gemini call. Phải nhỏ hơn JOB_TIMEOUT_SECONDS (300s)
+# để worker không bị arq kill trước khi raise TimeoutError có ý nghĩa.
+_GEMINI_HARD_TIMEOUT_S = 270
 
 
 def run_extraction(pdf_bytes: bytes) -> tuple[dict, str, bytes | None]:
-    api_key = itr.load_api_key()
+    # Source of truth = pydantic Settings (đọc .env hoặc env var thống nhất),
+    # không gọi `itr.load_api_key` parser thủ công nữa.
+    api_key = get_settings().gemini_api_key
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
 
@@ -29,8 +36,8 @@ def run_extraction(pdf_bytes: bytes) -> tuple[dict, str, bytes | None]:
             api_key, itr.DEFAULT_MODEL, "Task 2",
             itr.TASK2_RESPONSE_SCHEMA,
         )
-        t1, _ = f1.result()
-        t2, _ = f2.result()
+        t1, _ = f1.result(timeout=_GEMINI_HARD_TIMEOUT_S)
+        t2, _ = f2.result(timeout=_GEMINI_HARD_TIMEOUT_S)
     analysis_data = {**t2, **t1}
 
     econsent_bytes: bytes | None = None

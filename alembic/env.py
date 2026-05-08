@@ -5,8 +5,7 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
-# Must set env vars before importing project modules
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://x")
+# Defaults for non-DB vars so Settings() doesn't crash at import time
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("MSAL_TENANT_ID", "x")
 os.environ.setdefault("MSAL_BE_CLIENT_ID", "x")

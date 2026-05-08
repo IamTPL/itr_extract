@@ -7,9 +7,18 @@ User=itr
 Group=itr
 WorkingDirectory=/opt/itr_extract
 EnvironmentFile=/etc/itr_extract/api.env
-ExecStart=/opt/itr_extract/.venv/bin/uvicorn api:app --host 127.0.0.1 --port 8000
+# api.app:create_app là factory function — phải có flag --factory.
+# --workers 2 chỉ là gợi ý; tune theo CPU cores của VPS.
+ExecStart=/opt/itr_extract/.venv/bin/uvicorn api.app:create_app --factory --host 127.0.0.1 --port 8000 --workers 2
 Restart=always
 RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/itr_extract
 
 [Install]
 WantedBy=multi-user.target

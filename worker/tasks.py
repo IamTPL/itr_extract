@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 import traceback
@@ -29,7 +30,13 @@ async def process_job(ctx: dict, job_id_str: str) -> None:
 
     try:
         pdf_bytes = fs.read_input(job.user_id, job.id)
-        analysis, email_html, econsent = pipeline.run_extraction(pdf_bytes)
+        # `run_extraction` là CPU-bound + sync I/O (Gemini, fitz). Phải chạy
+        # trong thread executor để KHÔNG block arq event loop — nếu không, các
+        # job khác đang queue + cron (requeue, cleanup) sẽ bị stall đến vài phút.
+        loop = asyncio.get_running_loop()
+        analysis, email_html, econsent = await loop.run_in_executor(
+            None, pipeline.run_extraction, pdf_bytes,
+        )
         if econsent:
             fs.write_econsent(job.user_id, job.id, econsent)
         job.analysis_data = analysis

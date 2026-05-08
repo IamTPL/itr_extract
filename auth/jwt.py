@@ -19,22 +19,28 @@ async def verify_token(token: str, *, tenant_id: str, audience: str) -> dict:
     keys = await get_jwks(tenant_id)
     jwk = next((k for k in keys if k["kid"] == kid), None)
     if not jwk:
-        raise InvalidToken("Unknown signing key")
+        # Có thể Microsoft vừa rotate key, force refresh cache rồi thử lại 1 lần.
+        keys = await get_jwks(tenant_id, force_refresh=True)
+        jwk = next((k for k in keys if k["kid"] == kid), None)
+        if not jwk:
+            raise InvalidToken("Unknown signing key")
     public_key = RSAAlgorithm.from_jwk(jwk)
 
-    issuer = f"{AZURE_AUTHORITY_BASE}/{tenant_id}/v2.0"
+    decode_kwargs: dict = {
+        "algorithms": [JWT_ALGORITHM],
+        "audience": audience,
+        "leeway": JWT_LEEWAY_SECONDS,
+    }
+    # "common" endpoint: issuer is tenant-specific so we can't pre-compute it
+    if tenant_id != "common":
+        decode_kwargs["issuer"] = f"{AZURE_AUTHORITY_BASE}/{tenant_id}/v2.0"
+
     try:
-        claims = jwt.decode(
-            token, public_key,
-            algorithms=[JWT_ALGORITHM],
-            audience=audience,
-            issuer=issuer,
-            leeway=JWT_LEEWAY_SECONDS,
-        )
+        claims = jwt.decode(token, public_key, **decode_kwargs)
     except jwt.InvalidTokenError as e:
         raise InvalidToken(str(e)) from e
 
-    if claims.get("tid") != tenant_id:
+    if tenant_id != "common" and claims.get("tid") != tenant_id:
         raise InvalidToken("Wrong tenant")
     if not claims.get("oid"):
         raise InvalidToken("Missing oid")

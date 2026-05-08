@@ -19,7 +19,9 @@ INPUT_FILENAME              = "input.pdf"
 ECONSENT_FILENAME           = "econsent.pdf"
 
 # ── Auth / JWT ──
-JWKS_CACHE_TTL_SECONDS      = 3600
+# JWKS TTL ngắn để rút ngắn cửa sổ rủi ro nếu Microsoft rotate key.
+# Khi gặp kid không có trong cache, code sẽ refetch ngay (xem auth/jwks.py).
+JWKS_CACHE_TTL_SECONDS      = 600  # 10 phút
 JWT_LEEWAY_SECONDS          = 60
 JWT_ALGORITHM               = "RS256"
 BEARER_PREFIX               = "Bearer "
@@ -29,8 +31,9 @@ AZURE_AUTHORITY_BASE        = "https://login.microsoftonline.com"
 CLEANUP_ORPHAN_FILES_HOUR     = 3
 STUCK_JOB_SWEEP_INTERVAL_MIN  = 1
 
-# ── Rate limit ──
-USER_RATE_LIMIT             = "30/minute"
+# ── Rate limit (per IP, defense-in-depth bên cạnh per-user quota DB) ──
+USER_RATE_LIMIT             = "30/minute"   # Default limit cho mọi route
+UPLOAD_RATE_LIMIT           = "10/minute"   # POST /api/jobs (kể cả reprocess)
 
 # ── HTTP ──
 HEALTH_CHECK_TIMEOUT_SECONDS = 5

@@ -34,7 +34,7 @@ def upgrade() -> None:
         'jobs',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('status', sa.Enum('pending', 'processing', 'success', 'failed', name='job_status'), nullable=False),
+        sa.Column('status', postgresql.ENUM('pending', 'processing', 'success', 'failed', name='job_status', create_type=False), nullable=False),
         sa.Column('original_filename', sa.Text(), nullable=False),
         sa.Column('input_size_bytes', sa.BigInteger(), nullable=False),
         sa.Column('analysis_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True),

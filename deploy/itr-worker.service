@@ -10,6 +10,15 @@ EnvironmentFile=/etc/itr_extract/worker.env
 ExecStart=/opt/itr_extract/.venv/bin/arq worker.settings.WorkerSettings
 Restart=always
 RestartSec=3
+# Cho worker thời gian finish job hiện tại trước khi force kill (≥ JOB_TIMEOUT_SECONDS + buffer)
+TimeoutStopSec=330
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/itr_extract
 
 [Install]
 WantedBy=multi-user.target

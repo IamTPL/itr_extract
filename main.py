@@ -166,17 +166,15 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
                 print(f"\n   ⚠️  {tag}Timeout, retrying once (30s)...")
                 time.sleep(30)
                 continue
-            print(f"\n   ❌ Request timed out after 2 attempts.")
-            sys.exit(1)
+            raise RuntimeError(f"Gemini request timed out after 2 attempts ({tag.strip() or 'request'})")
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")
-            print(f"\n   ❌ Gemini API Error (HTTP {e.code}):")
             try:
                 err = json.loads(error_body)
-                print(f"      {err.get('error', {}).get('message', error_body[:500])}")
+                msg = err.get("error", {}).get("message", error_body[:500])
             except json.JSONDecodeError:
-                print(f"      {error_body[:500]}")
-            sys.exit(1)
+                msg = error_body[:500]
+            raise RuntimeError(f"Gemini HTTP {e.code}: {msg}") from e
         except urllib.error.URLError as e:
             # urllib wraps socket.timeout as URLError — treat as timeout and retry
             if isinstance(e.reason, (TimeoutError, socket.timeout)):
@@ -184,10 +182,8 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
                     print(f"\n   ⚠️  {tag}Timeout (connection), retrying once (30s)...")
                     time.sleep(10)
                     continue
-                print(f"\n   ❌ Request timed out after 2 attempts.")
-                sys.exit(1)
-            print(f"\n   ❌ Network Error: {e.reason}")
-            sys.exit(1)
+                raise RuntimeError(f"Gemini connection timed out after 2 attempts ({tag.strip() or 'request'})") from e
+            raise RuntimeError(f"Gemini network error: {e.reason}") from e
 
     # ── Token usage & cost ──
     usage = result.get("usageMetadata", {})
@@ -204,8 +200,7 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
     # Parse Gemini response — extract the non-thought text part
     candidates = result.get("candidates", [])
     if not candidates:
-        print("   ❌ No candidates in Gemini response")
-        sys.exit(1)
+        raise RuntimeError("Gemini returned no candidates")
 
     parts = candidates[0].get("content", {}).get("parts", [])
 
@@ -223,8 +218,7 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
                 break
 
     if not text_content:
-        print("   ❌ No text content in Gemini response")
-        sys.exit(1)
+        raise RuntimeError("Gemini returned no text content")
 
     # Clean markdown fences if present
     cleaned = text_content.strip()
@@ -245,9 +239,7 @@ def call_gemini(pdf_bytes, prompt, config, api_key, model=DEFAULT_MODEL, label="
     try:
         parsed, _ = json.JSONDecoder().raw_decode(cleaned)
     except json.JSONDecodeError as e:
-        print(f"   ❌ JSON parse error: {e}")
-        print(f"      Raw response (first 500 chars): {text_content[:500]}")
-        sys.exit(1)
+        raise RuntimeError(f"Gemini JSON parse error: {e}; first 200 chars: {text_content[:200]!r}") from e
 
     # Guard: unwrap if model wrapped response in a single-element array
     if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):

@@ -44,24 +44,58 @@ async def count_active_jobs(db: AsyncSession, user_id: UUID) -> int:
 
 
 async def enforce_session_cap(db: AsyncSession, user_id: UUID) -> list[UUID]:
-    q = select(Job).where(Job.user_id == user_id).order_by(Job.created_at.asc())
+    """Evict jobs cũ nhất để giữ tổng số jobs ≤ MAX_SESSIONS_PER_USER.
+
+    - CHỈ evict job có status terminal (SUCCESS/FAILED). Không bao giờ động vào
+      PENDING/PROCESSING (worker đang dùng).
+    - Commit DB TRƯỚC, xóa file SAU. Nếu commit fail thì file vẫn còn (không drift).
+      Nếu xóa file fail (vd disk error) thì file orphan sẽ được _cleanup_cron dọn.
+    """
+    terminal = [s.value for s in (JobStatus.SUCCESS, JobStatus.FAILED)]
+    q = (
+        select(Job)
+        .where(Job.user_id == user_id)
+        .order_by(Job.created_at.asc())
+    )
     all_jobs = list((await db.scalars(q)).all())
     excess = max(0, len(all_jobs) - MAX_SESSIONS_PER_USER)
     if excess == 0:
         return []
-    to_evict = all_jobs[:excess]
-    evicted_ids = [j.id for j in to_evict]
-    for j in to_evict:
-        fs.delete_job_dir(user_id, j.id)
+    # Lọc theo status terminal và lấy đủ excess (hoặc ít hơn nếu không đủ)
+    evictable = [j for j in all_jobs if j.status.value in terminal][:excess]
+    if not evictable:
+        return []
+    evicted_ids = [j.id for j in evictable]
+    for j in evictable:
         await db.delete(j)
     await db.commit()
+    # Xóa file sau khi DB commit thành công — nếu fail ở đây, file orphan
+    # sẽ được dọn bởi cron, không gây drift.
+    for jid in evicted_ids:
+        try:
+            fs.delete_job_dir(user_id, jid)
+        except OSError:
+            pass  # cron sẽ dọn sau
     return evicted_ids
 
 
+class JobBusyError(Exception):
+    """Job đang được worker xử lý — không cho delete."""
+
+
 async def delete_job(db: AsyncSession, user_id: UUID, job_id: UUID) -> bool:
-    job = await get_job_for_user(db, user_id, job_id)
+    # SELECT ... FOR UPDATE để lock row trong transaction, tránh race với worker
+    q = (
+        select(Job)
+        .where(Job.id == job_id, Job.user_id == user_id)
+        .with_for_update()
+    )
+    job = (await db.scalars(q)).one_or_none()
     if not job:
         return False
+    if job.status == JobStatus.PROCESSING:
+        await db.rollback()
+        raise JobBusyError("Job is currently being processed")
     fs.delete_job_dir(user_id, job_id)
     await db.delete(job)
     await db.commit()

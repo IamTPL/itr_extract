@@ -24,3 +24,7 @@ read_docx.py
 .agents
 
 .venv
+venv
+
+# Local file storage (dev)
+storage_data/
