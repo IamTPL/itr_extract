@@ -22,3 +22,5 @@ read_docx.py
 
 # Agent
 .agents
+
+.venv
