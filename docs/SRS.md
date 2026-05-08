@@ -174,7 +174,7 @@ $FILES_ROOT/
 | FR-GR-1 | Outlook draft create dùng `POST /me/messages` với body sanitize (DOMPurify). |
 | FR-GR-2 | Attachment econsent: `@odata.type: #microsoft.graph.fileAttachment`, base64 encoded bytes. |
 | FR-GR-3 | Subject template: `{tax_year} Income Tax Return — {client_name}`. |
-| FR-GR-4 | Filename attachment template: `Econsent_{client_name}.pdf` (replace whitespace bằng `_`). |
+| FR-GR-4 | Filename attachment cố định: `Econsent.pdf` (không suffix client name — client tự nhận diện qua subject + email body). |
 | FR-GR-5 | Token cho Graph API request scope `Mail.ReadWrite` qua `acquireTokenSilent`, fallback `acquireTokenPopup`. |
 
 ---
