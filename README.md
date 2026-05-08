@@ -45,17 +45,29 @@ Lấy key tại: <https://aistudio.google.com/apikey>
 
 ## Chạy
 
+### Chạy Backend API
+
+Khởi chạy FastAPI server để cung cấp endpoint `POST /api/process`:
+
+```bash
+uvicorn api:app --reload
+```
+
+Server sẽ mặc định chạy tại `http://localhost:8000`.
+
+### Chạy bằng CLI (Standalone)
+
 ```bash
 python3 main.py "samples/<TEN_FILE>.pdf"
 ```
 
-### Ví dụ
+#### Ví dụ CLI
 
 ```bash
 python3 main.py "samples/Trevor K Holloway DDS Inc ITR 2025 Original.pdf"
 ```
 
-### Options
+#### OptionsCLI
 
 ```bash
 # Dùng model khác
