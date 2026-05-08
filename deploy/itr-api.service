@@ -1,0 +1,15 @@
+[Unit]
+Description=ITR Extract API (uvicorn)
+After=network.target postgresql.service redis-server.service
+
+[Service]
+User=itr
+Group=itr
+WorkingDirectory=/opt/itr_extract
+EnvironmentFile=/etc/itr_extract/api.env
+ExecStart=/opt/itr_extract/.venv/bin/uvicorn api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
