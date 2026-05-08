@@ -23,10 +23,9 @@ Workflow thủ công tốn thời gian, dễ sai sót khi paraphrase outcome, v�
 
 ## 3. Target users
 
-| Persona        | Mô tả                                                | Use case chính                                                |
-| -------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
-| **CPA staff**  | Nhân viên thuế tại CPA firm (Mỹ), Microsoft 365 user | Upload ITR PDF, review email AI sinh, tạo draft trong Outlook |
-| **Firm admin** | Manager quản lý license/quota                        | (V2) Theo dõi usage, billing                                  |
+| Persona       | Mô tả                                                | Use case chính                                                |
+| ------------- | ---------------------------------------------------- | ------------------------------------------------------------- |
+| **CPA staff** | Nhân viên thuế tại CPA firm (Mỹ), Microsoft 365 user | Upload ITR PDF, review email AI sinh, tạo draft trong Outlook |
 
 ## 4. Core use cases
 
@@ -55,13 +54,11 @@ Workflow thủ công tốn thời gian, dễ sai sót khi paraphrase outcome, v�
 
 ## 5. Success metrics
 
-| Metric                                      | Target                 |
-| ------------------------------------------- | ---------------------- |
-| Time from upload → email draft created      | < 90s p95              |
-| Email outcome accuracy (vs. CPA review)     | ≥ 95%                  |
-| AI hallucination rate (cover letter values) | ≤ 1%                   |
-| System availability                         | 99.5% (business hours) |
-| User satisfaction (CSAT)                    | ≥ 4.0/5.0              |
+| Metric                                      | Target |
+| ------------------------------------------- | ------ |
+| Time from upload → email draft created      | < 90s  |
+| Email outcome accuracy (vs. CPA review)     | ≥ 98%  |
+| AI hallucination rate (cover letter values) | ≤ 1%   |
 
 ## 6. Out of scope (V2.0)
 
@@ -86,39 +83,18 @@ Workflow thủ công tốn thời gian, dễ sai sót khi paraphrase outcome, v�
 ### Technical
 
 - Single tenant per deployment (mỗi CPA firm 1 instance hoặc 1 tenant ID Azure AD)
-- Microsoft 365 work account (production) hoặc personal (dev only)
-- Gemini API quota theo deployment
+- Microsoft 365 work account
 - PostgreSQL + Redis bắt buộc
 
 ### Business
 
 - Khách hàng IT admin phải grant consent cho 3 scopes: `User.Read`, `Mail.ReadWrite`, custom `access_as_user`
-- Pricing per Gemini call (~$0.005-0.05/job tùy PDF size)
 
 ## 8. Non-goals
 
 Không thay thế phần mềm tax prep (Lacerte, ProSystem fx, UltraTax). Chỉ là layer post-processing sau khi tax return đã được prepare và export PDF.
 
-## 9. Stakeholders
-
-| Role             | Responsibility                              |
-| ---------------- | ------------------------------------------- |
-| Product Owner    | Roadmap, prioritization, customer feedback  |
-| Engineering      | Build, deploy, monitor                      |
-| QA               | Validate AI output accuracy via test corpus |
-| Customer Success | Onboard CPA firms, training                 |
-| Compliance       | PII review, legal forms accuracy            |
-
-## 10. Roadmap snapshot
-
-| Version          | Status     | Highlights                                                           |
-| ---------------- | ---------- | -------------------------------------------------------------------- |
-| **V1**           | Released   | CLI standalone, single PDF in/out                                    |
-| **V2** (current) | In testing | Web UI, multi-user auth, async jobs, history, Mail draft integration |
-| V2.1             | None       | Bulk upload (queue 1 PDF/job), retry policy refine                   |
-| V3               | None       | Multi-firm SaaS, billing, admin dashboard                            |
-
-## 11. Related documents
+## 9. Related documents
 
 - [docs/SRS.md](SRS.md) — chi tiết requirements & rules
 - [README.md](../README.md) — setup & runbook
