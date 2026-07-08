@@ -18,18 +18,20 @@ sudo -u postgres createdb -O itr itr_extract
 sudo -u postgres psql -c "ALTER USER itr WITH PASSWORD '<strong-password>';"
 ```
 
-## App user + clone
+## Clone + Python deps
+
+> **Ghi chú bảo mật:** an toàn nhất là chạy dịch vụ bằng **user riêng không có `sudo`** (vd `sudo useradd -r -m -d /opt/itr_extract itr`, rồi thay `ubuntu` bằng `itr` ở các lệnh bên dưới **và** trong `User=`/`Group=` của 2 file `.service`) — app bị khai thác cũng không leo được quyền root. Bản deploy hiện tại chạy bằng `ubuntu` cho gọn (xem [RUNBOOK-AWS.md](RUNBOOK-AWS.md)); đánh đổi là `ubuntu` có `sudo`.
 
 ```bash
-sudo useradd -r -m -d /opt/itr_extract itr
-sudo -u itr git clone <repo-url> /opt/itr_extract
+sudo mkdir -p /opt/itr_extract && sudo chown ubuntu:ubuntu /opt/itr_extract
+git clone <repo-url> /opt/itr_extract
 cd /opt/itr_extract
-sudo -u itr python3.12 -m venv .venv
-sudo -u itr .venv/bin/pip install --upgrade pip
-sudo -u itr .venv/bin/pip install -r requirements.txt
+python3.12 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
 
 sudo mkdir -p /var/lib/itr_extract/files
-sudo chown -R itr:itr /var/lib/itr_extract
+sudo chown -R ubuntu:ubuntu /var/lib/itr_extract
 sudo chmod 700 /var/lib/itr_extract
 ```
 
@@ -45,7 +47,7 @@ REDIS_URL=redis://localhost:6379
 MSAL_TENANT_ID=<azure-tenant-id-from-customer>
 MSAL_BE_CLIENT_ID=<azure-app-client-id>
 GEMINI_API_KEY=<gemini-key>
-ALLOWED_ORIGINS=["https://app.example.com"]
+ALLOWED_ORIGINS='["https://app.example.com"]'
 FILES_ROOT=/var/lib/itr_extract/files
 ```
 
@@ -53,14 +55,14 @@ FILES_ROOT=/var/lib/itr_extract/files
 
 ```bash
 sudo mkdir -p /etc/itr_extract
-sudo chown root:itr /etc/itr_extract
+sudo chown root:ubuntu /etc/itr_extract
 sudo chmod 750 /etc/itr_extract
-# Tạo file env, set quyền 640 — root sửa, itr đọc
+# Tạo file env, set quyền 640 — root sửa, ubuntu đọc
 sudo -e /etc/itr_extract/api.env       # paste content
-sudo chown root:itr /etc/itr_extract/api.env
+sudo chown root:ubuntu /etc/itr_extract/api.env
 sudo chmod 640 /etc/itr_extract/api.env
 sudo cp /etc/itr_extract/api.env /etc/itr_extract/worker.env
-sudo chown root:itr /etc/itr_extract/worker.env
+sudo chown root:ubuntu /etc/itr_extract/worker.env
 sudo chmod 640 /etc/itr_extract/worker.env
 ```
 
@@ -72,7 +74,8 @@ sudo chmod 640 /etc/itr_extract/worker.env
 
 ```bash
 cd /opt/itr_extract
-sudo -u itr .venv/bin/alembic upgrade head
+# Nạp env từ /etc rồi chạy alembic (gõ tay nên không có systemd bơm biến vào)
+bash -c 'set -a; source /etc/itr_extract/api.env; set +a; .venv/bin/alembic upgrade head'
 ```
 
 ## Systemd services
@@ -175,9 +178,9 @@ find $BACKUP_DIR -mtime +30 -delete
 
 ```bash
 cd /opt/itr_extract
-sudo -u itr git pull
-sudo -u itr .venv/bin/pip install -r requirements.txt
-sudo -u itr .venv/bin/alembic upgrade head
+git pull
+.venv/bin/pip install -r requirements.txt
+bash -c 'set -a; source /etc/itr_extract/api.env; set +a; .venv/bin/alembic upgrade head'
 sudo systemctl restart itr-api itr-worker
 ```
 
@@ -197,7 +200,7 @@ sudo systemctl restart itr-api itr-worker
 - [ ] `ENVIRONMENT=production` trong cả `api.env` lẫn `worker.env`
 - [ ] `MSAL_TENANT_ID` là tenant thực của khách hàng
 - [ ] `ALLOWED_ORIGINS` exact match domain frontend (không wildcard, không localhost)
-- [ ] `chmod 640 /etc/itr_extract/*.env`, owner `root:itr`
+- [ ] `chmod 640 /etc/itr_extract/*.env`, owner `root:ubuntu`
 - [ ] Postgres password ≥ 20 ký tự random
 - [ ] Redis bind 127.0.0.1 only
 - [ ] UFW firewall chỉ open 80, 443, 22

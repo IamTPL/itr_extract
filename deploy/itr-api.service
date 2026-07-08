@@ -3,8 +3,8 @@ Description=ITR Extract API (uvicorn)
 After=network.target postgresql.service redis-server.service
 
 [Service]
-User=itr
-Group=itr
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/opt/itr_extract
 EnvironmentFile=/etc/itr_extract/api.env
 # api.app:create_app là factory function — phải có flag --factory.
