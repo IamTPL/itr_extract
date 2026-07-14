@@ -75,6 +75,8 @@ TASK1_PROMPT = (_PROMPTS_DIR / "task1_econsent.txt").read_text(encoding="utf-8")
 TASK2_PROMPT = (_PROMPTS_DIR / "task2_email.txt").read_text(encoding="utf-8")
 
 from schemas import TASK2_RESPONSE_SCHEMA  # noqa: E402
+from config.constants import INVOICE_BRAND_NAME  # noqa: E402
+from jobs.tax_labels import resolve_tax_summary_labels  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -306,14 +308,8 @@ def _add_paragraph(doc, text, bold=False, size=11, space_after=0, space_before=0
     return para
 
 
-def _add_markdown_paragraph(doc, text, size=11, space_after=4, space_before=0, font_name="Calibri"):
-    """Add a paragraph, rendering ``**bold**`` markdown segments as bold runs.
-
-    Splits the text on ``**...**`` — odd-indexed segments become bold runs.
-    Empty segments (e.g. when text starts with ``**``) are skipped to avoid
-    creating zero-width runs.
-    """
-    para = doc.add_paragraph()
+def _add_markdown_runs(para, text, size=11, font_name="Calibri"):
+    """Append text to ``para``, rendering ``**bold**`` segments as bold runs."""
     segments = re.split(r"\*\*(.+?)\*\*", text)
     for idx, segment in enumerate(segments):
         if segment == "":
@@ -322,6 +318,27 @@ def _add_markdown_paragraph(doc, text, size=11, space_after=4, space_before=0, f
         run.font.name = font_name
         run.font.size = Pt(size)
         run.font.bold = (idx % 2 == 1)
+
+
+def _add_markdown_paragraph(doc, text, size=11, space_after=4, space_before=0, font_name="Calibri"):
+    """Add a paragraph, rendering ``**bold**`` markdown segments as bold runs."""
+    para = doc.add_paragraph()
+    _add_markdown_runs(para, text, size=size, font_name=font_name)
+    para.paragraph_format.space_after = Pt(space_after)
+    para.paragraph_format.space_before = Pt(space_before)
+    return para
+
+
+def _add_labeled_markdown_paragraph(
+    doc, label, text, size=11, space_after=4, space_before=0, font_name="Calibri",
+):
+    """Add a literal label followed by a Markdown-formatted sentence."""
+    para = doc.add_paragraph()
+    label_run = para.add_run(f"{label}: ")
+    label_run.font.name = font_name
+    label_run.font.size = Pt(size)
+    label_run.font.bold = False
+    _add_markdown_runs(para, text, size=size, font_name=font_name)
     para.paragraph_format.space_after = Pt(space_after)
     para.paragraph_format.space_before = Pt(space_before)
     return para
@@ -359,7 +376,7 @@ def generate_email_docx(data, output_path):
 
     # ── Shortcuts ──
     client = data.get("client", {})
-    firm = data.get("cpa_firm", {})
+    firm = data.get("cpa_firm", {}) or {}
     tax_year = str(data.get("tax_year", "2025"))
     next_year = str(int(tax_year) + 1) if tax_year.isdigit() else "2026"
 
@@ -372,10 +389,9 @@ def generate_email_docx(data, output_path):
     _add_paragraph(doc, "Dear Client,", size=11, space_after=12)
 
     # Introduction
-    firm_name = firm.get("name", "our firm")
     _add_paragraph(
         doc,
-        f"Your {tax_year} Income Tax Return and {firm_name} invoice are now available "
+        f"Your {tax_year} Income Tax Return and {INVOICE_BRAND_NAME} invoice are now available "
         f"on the ShareFile portal.",
         size=11,
         space_after=8,
@@ -403,17 +419,12 @@ def generate_email_docx(data, output_path):
 
     # State sentence(s)
     state_sentences = tax_summary.get("state_sentences", []) or []
-    multi_state = len(state_sentences) > 1
-    for st in state_sentences:
+    state_labels = resolve_tax_summary_labels(state_sentences)
+    for st, label in zip(state_sentences, state_labels):
         sentence = st.get("sentence")
         if not sentence:
             continue
-        if multi_state:
-            abbr = st.get("state_abbreviation") or st.get("state_name", "State")
-            label = f"{abbr} State"
-        else:
-            label = "State"
-        _add_markdown_paragraph(doc, f"{label} Income Tax: {sentence}", space_after=8)
+        _add_labeled_markdown_paragraph(doc, label, sentence, space_after=8)
 
     # ── Next Year Estimated Tax Payments ──
     estimated = data.get("estimated_payments", [])

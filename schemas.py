@@ -58,10 +58,13 @@ TASK2_RESPONSE_SCHEMA = {
                     "type": "ARRAY",
                     "items": {
                         "type": "OBJECT",
-                        "required": ["state_name", "state_abbreviation", "sentence"],
+                        "required": [
+                            "state_name", "state_abbreviation", "display_label", "sentence",
+                        ],
                         "properties": {
                             "state_name":         {"type": "STRING"},
                             "state_abbreviation": {"type": "STRING"},
+                            "display_label":      {"type": "STRING", "nullable": True},
                             "sentence":           {"type": "STRING"},
                         },
                     },

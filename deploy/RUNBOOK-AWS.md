@@ -2,12 +2,15 @@
 
 > Hướng dẫn deploy **từng bước, dành cho người mới**, viết riêng cho instance AWS mà IT đã cấp.
 > Đọc [deploy/README.md](README.md) nếu muốn bản gốc tổng quát. File này là bản **thực chiến** cho tình huống cụ thể của bạn.
+> 👉 **Deploy lại từ đầu hoặc vận hành hằng ngày?** Dùng bản hướng dẫn sạch cho team: [deploy_tutorial.md](deploy_tutorial.md) (Phần 1: server trắng → chạy; Phần 2: cập nhật code/env/nginx).
 
-## Chiến lược (nhắc lại để bạn nhớ)
+## Chiến lược (cập nhật 2026-07-09 — auth LUÔN khóa theo tenant)
 
-- **Mục tiêu:** production cho khách hàng, chạy trên **IP tĩnh (Elastic IP)**.
-- **Giai đoạn 1 (Pha A + B):** dựng đầy đủ hạ tầng, cho khách **dùng thử** với đăng nhập tạm (chấp nhận tài khoản Microsoft bất kỳ).
-- **Giai đoạn 2 (Pha C):** khi có **Tenant ID + admin consent** của khách → siết lên **production auth thật** (chỉ đổi cấu hình + build lại frontend, **không sửa code**).
+- **Mục tiêu:** production cho khách **CYNU** tại `itr.cynu.com`, chạy trên **IP tĩnh (Elastic IP)**.
+- **Kiến trúc auth — "Đường 1" (đã chốt):** dùng **1 app registration của Bestarion** cho cả SPA + API (mô hình multi-tenant kiểu Zoom/Slack). Khách **KHÔNG** phải tạo app — IT CYNU chỉ làm 3 việc: thêm DNS, bấm link **admin consent**, gửi lại **Tenant ID**.
+- **KHÔNG có giai đoạn "tài khoản bất kỳ".** `MSAL_TENANT_ID` luôn pin đúng 1 tenant:
+  - **TEST (nội bộ):** pin tenant **Bestarion** → chỉ nhân viên Bestarion login được.
+  - **PRODUCTION (Pha C):** đổi pin sang tenant **CYNU** + `ENVIRONMENT=production` → chỉ tài khoản khách login được. Chỉ đổi cấu hình + build lại frontend, **không sửa code**.
 - **1 tên miền duy nhất:** frontend ở `/`, backend ở `/api` → gọn, không lo CORS.
 
 ---
@@ -29,10 +32,13 @@
 - [x] A6 — thư mục file `/var/lib/itr_extract`
 - [x] A7 — file env `/etc/itr_extract/{api,worker}.env`
 - [x] A8 — migrations (tạo bảng: alembic_version, jobs, users)
-- [ ] A9 — systemd services ← đang ở đây
-- [ ] A10 — kiểm tra `/healthz`
-- [ ] Pha B — mở ra Internet (chờ Elastic IP)
-- [ ] Pha C — production auth (chờ Tenant ID khách)
+- [x] A9 — systemd services (itr-api + itr-worker: active running)
+- [x] A10 — `/healthz` → `{"status":"ok"}` ✅ **PHA A HOÀN THÀNH (2026-07-09)**
+- [x] Chuẩn bị Azure (2026-07-09): audience → *"Multiple Entra ID tenants"*; SPA URI `http://localhost:5173`; scope `access_as_user` (Expose an API); 4 quyền Delegated: `User.Read`, `Mail.Read`, `Mail.ReadWrite`, `access_as_user`
+- [x] Diễn tập Pha C — hoàn thành dưới dạng B7 trên domain thật (admin consent Bestarion đã cấp sau khi BoD duyệt; tunnel không còn cần)
+- [x] Pha B — **HOÀN THÀNH 2026-07-11**: B1–B6 ✅ · B7 login + upload PDF OK trên `https://itr.cynu.com` (tenant pin Bestarion; lỗi build dính `.env.local` đã sửa — bài học ghi trong [deploy_tutorial.md](deploy_tutorial.md))
+- [ ] Gửi tài liệu cho IT CYNU ([cynu_it_request.md](cynu_it_request.md)) → chờ họ: admin consent + Tenant ID ← đang ở đây
+- [ ] Pha C — flip sang tenant CYNU (kiến trúc "Đường 1" ✅ chốt 2026-07-09; chờ IT khách: admin consent + Tenant ID)
 
 ---
 
@@ -42,11 +48,13 @@ Trong runbook có các "chỗ trống" dạng `<...>`. Điền giá trị của 
 
 | Ký hiệu | Ý nghĩa | Giá trị của bạn |
 |---|---|---|
-| `<ELASTIC_IP>` | Elastic IP sau khi IT cấp | `............` (chờ IT) |
-| `<HOST>` | Tên miền công khai | `itr.bestarion.com` **hoặc** `<ELASTIC_IP dạng gạch nối>.nip.io` (vd `1-2-3-4.nip.io`) |
+| `<ELASTIC_IP>` | Elastic IP đã cấp + gắn vào instance | `35.174.254.48` ✅ |
+| `<HOST>` | Tên miền công khai | `itr.cynu.com` ✅ *(subdomain trên domain KHÁCH `cynu.com` — IT khách thêm bản ghi A → `35.174.254.48`)* |
 | `<DB_PASSWORD>` | Mật khẩu database (tự sinh ở bước A2) | `............` |
 | `<GEMINI_KEY>` | Gemini API key | Copy từ file `.env` local (dòng `GEMINI_API_KEY=`) |
 | `<AZURE_CLIENT_ID>` | Client ID app Azure | `dca257ea-bb51-40cd-8e80-5e32abd9752e` *(kiểm tra khớp với `.env` local)* |
+| `<BESTARION_TENANT_ID>` | Tenant ID Bestarion (giai đoạn TEST) | Copy từ portal: Entra ID → Overview → Tenant ID |
+| `<CYNU_TENANT_ID>` | Tenant ID của khách CYNU (PRODUCTION) | `............` (IT khách gửi sau khi admin consent) |
 
 > **Client ID không phải bí mật** (nó lộ ra trong trình duyệt) nên ghi thẳng được.
 > **Gemini key và mật khẩu DB là bí mật** — không commit, không gửi chat.
@@ -56,15 +64,15 @@ Trong runbook có các "chỗ trống" dạng `<...>`. Điền giá trị của 
 ## 1. Checklist chuẩn bị (làm trước, phần lâu nhất)
 
 - [ ] **SSH vào được máy** (xem mục 2 bên dưới).
-- [ ] **IT đã cấp Elastic IP** và gắn vào instance `i-0d4965bad3a8b2bf9` → ghi vào `<ELASTIC_IP>`. *(Bắt buộc cho Pha B)*
-- [ ] **IT đã mở Security Group** inbound: **22** (SSH), **80** (HTTP), **443** (HTTPS).
-- [ ] *(Nếu xin được)* IT tạo DNS `itr.bestarion.com` → `<ELASTIC_IP>`. Không có thì dùng `nip.io`.
+- [x] **IT đã cấp Elastic IP** `35.174.254.48` và gắn vào instance `i-0d4965bad3a8b2bf9`. *(Bắt buộc cho Pha B)*
+- [ ] **IT đã mở Security Group** inbound: **22** (SSH) ✅ — cần xác nhận thêm **80** (HTTP), **443** (HTTPS) cho Pha B.
+- [x] Thêm bản ghi DNS A: `itr.cynu.com` → `35.174.254.48` — **đã tự làm trên GoDaddy của khách, XONG 2026-07-10** (thêm đúng 1 record, bảng 24→25 dòng, web/MX khách nguyên vẹn; xác minh qua `@ns21.domaincontrol.com`, `@8.8.8.8`, `@1.1.1.1`). Nhờ vậy tài liệu gửi IT CYNU chỉ còn 2 việc: admin consent + gửi Tenant ID.
 - [ ] Có **Gemini API key** (đã có trong `.env` local).
 - [ ] Có **Client ID Azure** (đã có: `dca257ea-…`).
 - [ ] Quyền vào **portal.azure.com** để thêm Redirect URI (bước B6).
 - [ ] *(Pha C — làm song song từ giờ)* Xin **Tenant ID** của khách + nhờ **admin bên khách grant consent**.
 
-> **Pha A không cần Elastic IP** — bạn có thể chạy hết Pha A ngay hôm nay, chờ IT là chạy tiếp Pha B.
+> **Pha A không cần Elastic IP.** Giờ đã có Elastic IP `35.174.254.48` → sẵn sàng sang Pha B (chỉ cần IT đã mở port 80/443 và chốt `<HOST>`).
 
 ---
 
@@ -75,8 +83,8 @@ Trong runbook có các "chỗ trống" dạng `<...>`. Điền giá trị của 
 cp /mnt/c/Users/<TênWindows>/Downloads/CNY_Key.pem ~/.ssh/CNY_Key.pem
 chmod 600 ~/.ssh/CNY_Key.pem
 
-# Kết nối (dùng Elastic IP nếu đã có, chưa thì dùng IP hiện tại 44.192.106.125)
-ssh -i ~/.ssh/CNY_Key.pem ubuntu@<ELASTIC_IP>
+# Kết nối bằng Elastic IP (IP tĩnh — không đổi khi Stop/Start)
+ssh -i ~/.ssh/CNY_Key.pem ubuntu@35.174.254.48
 ```
 
 Vào được sẽ thấy `ubuntu@ip-172-31-...:~$`. Từ giờ mọi lệnh **chạy TRÊN máy chủ này** (trừ khi ghi rõ "trên máy bạn").
@@ -212,12 +220,14 @@ sudo nano /etc/itr_extract/api.env
 Dán nội dung sau (thay `<DB_PASSWORD>` và `<GEMINI_KEY>`):
 
 ```bash
-# === GIAI ĐOẠN DÙNG THỬ ===
-# CHƯA đặt ENVIRONMENT=production (sẽ bật ở Pha C khi có Tenant ID).
-# MSAL_TENANT_ID để TRỐNG = chấp nhận tài khoản Microsoft bất kỳ (chỉ dùng tạm).
+# === GIAI ĐOẠN TEST NỘI BỘ (auth luôn pin theo tenant) ===
+# CHƯA đặt ENVIRONMENT=production (bật ở Pha C khi flip sang tenant CYNU).
+# MSAL_TENANT_ID pin tenant Bestarion → CHỈ nhân viên Bestarion login được.
+# (Để trống = nhận mọi tài khoản Microsoft — chỉ dành cho dev local, KHÔNG dùng trên server.)
+# (Ghi chú lịch sử: lúc setup ban đầu 2026-07-08 giá trị này để trống; đổi sang pin Bestarion khi bắt đầu diễn tập Pha C 2026-07-09.)
 DATABASE_URL=postgresql+asyncpg://itr:<DB_PASSWORD>@localhost:5432/itr_extract
 REDIS_URL=redis://localhost:6379
-MSAL_TENANT_ID=
+MSAL_TENANT_ID=<BESTARION_TENANT_ID>
 MSAL_BE_CLIENT_ID=dca257ea-bb51-40cd-8e80-5e32abd9752e
 GEMINI_API_KEY=<GEMINI_KEY>
 ALLOWED_ORIGINS='["http://localhost:5173"]'
@@ -296,14 +306,14 @@ curl http://127.0.0.1:8000/healthz
 
 ## B1. Xác định `<HOST>`
 
-- **Có subdomain** (`itr.bestarion.com`): kiểm tra DNS đã trỏ đúng:
-  ```bash
-  dig +short itr.bestarion.com     # phải in ra <ELASTIC_IP>
-  ```
-- **Dùng nip.io**: `<HOST>` = Elastic IP thay dấu chấm bằng gạch nối + `.nip.io`.
-  Ví dụ Elastic IP `52.10.20.30` → `<HOST>` = `52-10-20-30.nip.io` (không cần cấu hình gì, tự trỏ về đúng IP).
+`<HOST>` đã chốt = **`itr.cynu.com`** (subdomain trên domain của khách). Kiểm tra IT khách đã thêm DNS chưa:
 
-Ghi `<HOST>` vào bảng mục 0.
+```bash
+dig +short itr.cynu.com          # phải in ra 35.174.254.48
+```
+
+- **Chưa ra IP** → DNS chưa thêm/chưa lan truyền. Không sao — vẫn làm trước được **B2, B3, B4** (không cần DNS); chỉ **B5 (certbot) trở đi** mới bắt buộc DNS đã trỏ đúng.
+- *(Dự phòng demo nội bộ: `35-174-254-48.nip.io` — lưu ý nhiều mạng doanh nghiệp chặn nip.io, không dùng cho khách.)*
 
 ## B2. Bật tường lửa trên máy (UFW)
 
@@ -331,10 +341,10 @@ Dán (thay `<HOST>`):
 VITE_API_BASE_URL=https://<HOST>
 VITE_MSAL_CLIENT_ID=dca257ea-bb51-40cd-8e80-5e32abd9752e
 VITE_MSAL_BE_CLIENT_ID=dca257ea-bb51-40cd-8e80-5e32abd9752e
-VITE_MSAL_TENANT_ID=
+VITE_MSAL_TENANT_ID=<BESTARION_TENANT_ID>
 ```
 
-> `VITE_MSAL_TENANT_ID` để **trống** trong giai đoạn dùng thử (khớp với backend). Pha C sẽ điền.
+> Giai đoạn TEST pin tenant **Bestarion** (phải KHỚP với backend `api.env`). Pha C đổi thành `<CYNU_TENANT_ID>` rồi build lại.
 
 Build và đưa file tĩnh cho nginx phục vụ:
 
@@ -419,33 +429,43 @@ sudo nginx -t && sudo systemctl reload nginx
 2. **Authentication** → **Add a platform** → **Single-page application** (nếu chưa có).
 3. Thêm Redirect URI: **`https://<HOST>`** → **Save**.
 
-> **Lưu ý (giai đoạn dùng thử):** để nhận **mọi tài khoản Microsoft**, app phải ở loại *"any organizational directory + personal accounts"*. Nếu app đang là *single-tenant*, chỉ tài khoản trong tenant đó đăng nhập được. Kiểm tra ở tab **Overview → Supported account types**.
+> **Lưu ý (Supported account types):** đã đổi 1 lần duy nhất (2026-07-09) sang *"Multiple Entra ID tenants"* + *Allow all tenants* — đây là trạng thái production cuối cùng: mọi tổ chức consent được, **KHÔNG** nhận tài khoản personal. Việc "chỉ tenant nào vào được app" do `MSAL_TENANT_ID` (backend) + `VITE_MSAL_TENANT_ID` (FE) đảm nhiệm. Kiểm tra nhanh ở tab **Overview**.
 
 ## B7. Kiểm tra toàn bộ (go-live dùng thử)
 
 Trên **máy bạn**, mở trình duyệt: **`https://<HOST>`**
 - [ ] Trang web hiện ra, có khóa 🔒 (HTTPS hợp lệ).
-- [ ] Bấm đăng nhập → login bằng tài khoản Microsoft → quay lại app thành công.
+- [ ] Login bằng tài khoản **@bestarion.com** → quay lại app thành công.
+- [ ] Thử 1 tài khoản **ngoài Bestarion** (cá nhân/tenant khác) → **phải bị chặn**.
 - [ ] Upload 1 file PDF mẫu → job chuyển từ *pending* → *done*, tải được kết quả.
 
-✅ **Pha B hoàn thành — khách có thể dùng thử.**
+✅ **Pha B hoàn thành — hệ thống live trên hạ tầng thật, nội bộ Bestarion test được. Khách chỉ vào được sau Pha C.**
 
 ---
 
-# PHA C — Siết lên PRODUCTION AUTH (khi có Tenant ID + admin consent)
+# PHA C — Flip sang PRODUCTION AUTH tenant CYNU (kiến trúc "Đường 1")
 
-Làm khi đã có **Tenant ID của khách** và **admin bên khách đã grant consent**.
+> **Kiến trúc đã chốt 2026-07-09:** giữ app registration của Bestarion (mô hình multi-tenant kiểu Zoom/Slack) — khách **không** tạo app. Sau khi admin CYNU consent, app tự xuất hiện trong **Enterprise applications** của tenant họ (họ toàn quyền thu hồi/giới hạn).
 
-**1. Phía Azure (khách hàng làm phần admin):**
-- Admin của tenant khách **Grant admin consent** cho `User.Read`, `Mail.ReadWrite`, `access_as_user`.
-- Đảm bảo `https://<HOST>` đã nằm trong Redirect URIs (đã thêm ở B6).
+Làm khi đã có **Tenant ID của CYNU** và **admin CYNU đã grant consent**.
+
+**0. Phía Azure (MÌNH verify lại, 1 phút):**
+- **Supported account types** = *"Multiple Entra ID tenants"* — đã set sẵn từ 2026-07-09, chỉ cần nhìn lại ở Overview.
+- *(Tùy chọn — lớp khóa phụ):* Authentication → Supported accounts → **"Allow only certain tenants (Preview)"** → thêm tenant Bestarion + CYNU vào danh sách → mọi tenant khác bị chặn ngay từ cổng Microsoft. Là tính năng Preview nên KHÔNG bắt buộc; backend đã pin tenant rồi.
+
+**1. Phía khách (IT CYNU — theo tài liệu mình gửi, 2 việc):**
+- *(DNS `itr.cynu.com` đã do MÌNH tự thêm trên GoDaddy của khách ở Pha B — họ không phải làm.)*
+- Mở link admin consent: `https://login.microsoftonline.com/cynu.com/adminconsent?client_id=dca257ea-bb51-40cd-8e80-5e32abd9752e` → đăng nhập bằng tài khoản **admin** → **Accept** (grant `User.Read`, `Mail.ReadWrite`, `access_as_user`). *(Nếu segment `cynu.com` không được nhận, thay bằng Tenant ID của họ.)*
+- Gửi lại **Tenant ID** của họ → ghi vào `<CYNU_TENANT_ID>` (bảng mục 0).
+
+Phía mình kiểm tra thêm: `https://<HOST>` đã nằm trong Redirect URIs (đã thêm ở B6).
 
 **2. Backend — bật chế độ chặt:**
 ```bash
 sudo nano /etc/itr_extract/api.env
 #   sửa/thêm 2 dòng:
 #     ENVIRONMENT=production
-#     MSAL_TENANT_ID=<tenant-id-của-khách>
+#     MSAL_TENANT_ID=<CYNU_TENANT_ID>
 sudo cp /etc/itr_extract/api.env /etc/itr_extract/worker.env
 sudo chown root:ubuntu /etc/itr_extract/worker.env && sudo chmod 640 /etc/itr_extract/worker.env
 sudo systemctl restart itr-api itr-worker
@@ -457,7 +477,7 @@ sudo systemctl status itr-api        # nếu fail → xem journalctl, thường 
 **3. Frontend — build lại với Tenant ID:**
 ```bash
 sudo nano /opt/itr_extract_fe/.env.production
-#   sửa dòng:  VITE_MSAL_TENANT_ID=<tenant-id-của-khách>
+#   sửa dòng:  VITE_MSAL_TENANT_ID=<CYNU_TENANT_ID>
 cd /opt/itr_extract_fe
 npm run build
 sudo rsync -av --delete dist/ /var/www/itr_extract/
@@ -517,7 +537,7 @@ sudo certbot renew --dry-run
 | Job kẹt *pending* mãi | `sudo journalctl -u itr-worker -n 100`; kiểm tra Redis (`redis-cli ping`) |
 | Đăng nhập MS lỗi *redirect_uri mismatch* | `https://<HOST>` chưa được thêm vào Redirect URIs của app Azure (bước B6) |
 | certbot thất bại | `<HOST>` chưa trỏ đúng IP, hoặc port 80 chưa mở (SG + UFW) |
-| API 401 `Wrong tenant` (giai đoạn thử) | Đảm bảo `MSAL_TENANT_ID` đang **để trống** (chưa lên Pha C) |
+| API 401 `Wrong tenant` | Tài khoản login không thuộc tenant đang pin trong `MSAL_TENANT_ID` (TEST = Bestarion, PROD = CYNU). Kiểm tra backend env **và** `VITE_MSAL_TENANT_ID` của bản FE đã build — 2 bên phải cùng 1 tenant |
 
 Danh sách đầy đủ các lỗi thường gặp: [docs/SETUP_REPORT.md](../docs/SETUP_REPORT.md) và [deploy/README.md](README.md).
 
@@ -525,15 +545,17 @@ Danh sách đầy đủ các lỗi thường gặp: [docs/SETUP_REPORT.md](../do
 
 # Checklist go-live (tick trước khi giao khách)
 
-**Dùng thử (sau Pha B):**
+**Test nội bộ trên hạ tầng thật (sau Pha B):**
 - [ ] `https://<HOST>` mở được, HTTPS hợp lệ (khóa 🔒)
-- [ ] Đăng nhập Microsoft OK, upload + xử lý PDF OK
-- [ ] `certbot renew --dry-run` pass
+- [ ] Đăng nhập bằng tài khoản Bestarion **có trong danh sách** OK (tài khoản ngoài tenant bị chặn; user Bestarion KHÔNG được gán cũng bị chặn), upload + xử lý PDF OK
+- [x] Entra: Enterprise app **"Assignment required" = Yes** + gán đích danh từng user (2026-07-10 — theo yêu cầu per-user của IT Bestarion; đã gỡ quyền thừa `Mail.Read`, còn đúng 3 quyền Delegated)
+- [x] `certbot renew --dry-run` pass (2026-07-10 — "all simulated renewals succeeded")
 - [ ] Đã nhờ IT bật IP Whitelist (chỉ mạng bạn + khách) trong giai đoạn thử
 
 **Production thật (sau Pha C):**
+- [ ] Supported account types = *"Multiple Entra ID tenants"* (đã set 2026-07-09 — verify lại ở Overview)
 - [ ] `ENVIRONMENT=production` trong cả `api.env` lẫn `worker.env`
-- [ ] `MSAL_TENANT_ID` là tenant thật của khách; admin đã grant consent
+- [ ] `MSAL_TENANT_ID` = `<CYNU_TENANT_ID>`; admin CYNU đã grant consent
 - [ ] `ALLOWED_ORIGINS=["https://<HOST>"]` (không còn localhost)
 - [ ] Frontend đã build lại với `VITE_MSAL_TENANT_ID`
 - [ ] Chỉ tài khoản của khách đăng nhập được; tài khoản ngoài bị chặn

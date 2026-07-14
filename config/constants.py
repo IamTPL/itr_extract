@@ -37,3 +37,6 @@ UPLOAD_RATE_LIMIT           = "10/minute"   # POST /api/jobs (kể cả reproces
 
 # ── HTTP ──
 HEALTH_CHECK_TIMEOUT_SECONDS = 5
+
+# ── Email presentation ──
+INVOICE_BRAND_NAME = "CNY"

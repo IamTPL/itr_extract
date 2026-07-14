@@ -1,10 +1,14 @@
 import re
+from html import escape
+
+from config.constants import INVOICE_BRAND_NAME
+from jobs.tax_labels import resolve_tax_summary_labels
 from main import PTE_ELIGIBLE_RETURN_TYPES
 
 
 def _md_to_html(text: str) -> str:
-    """Convert **bold** markdown markers to <strong> HTML tags."""
-    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    """Escape dynamic text, then convert **bold** markers to safe HTML tags."""
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(text))
 
 
 def generate_email_html(data: dict) -> str:
@@ -16,10 +20,11 @@ def generate_email_html(data: dict) -> str:
     firm = data.get("cpa_firm", {}) or {}
     tax_year = str(data.get("tax_year", ""))
     next_year = str(int(tax_year) + 1) if tax_year.isdigit() else ""
+    escaped_tax_year = escape(tax_year)
+    escaped_next_year = escape(next_year)
     tax_summary = data.get("tax_summary", {}) or {}
     estimated = data.get("estimated_payments", []) or []
     return_type = data.get("return_type")
-    firm_name = firm.get("name", "our firm")
     subdomain = firm.get("sharefile_subdomain", "")
 
     p = '<p style="margin:0 0 10px 0;">'
@@ -28,7 +33,7 @@ def generate_email_html(data: dict) -> str:
 
     lines.append(f'{p}Dear Client,</p>')
     lines.append(
-        f'{p}Your {tax_year} Income Tax Return and {firm_name} invoice are now available '
+        f'{p}Your {escaped_tax_year} Income Tax Return and {INVOICE_BRAND_NAME} invoice are now available '
         f'on the ShareFile portal.</p>'
     )
     lines.append(
@@ -38,28 +43,23 @@ def generate_email_html(data: dict) -> str:
     )
 
     # ── Current Year Tax Payment Summary ──
-    lines.append(f'<p style="margin:16px 0 8px 0;"><strong>{tax_year} Tax Payment Summary</strong></p>')
+    lines.append(f'<p style="margin:16px 0 8px 0;"><strong>{escaped_tax_year} Tax Payment Summary</strong></p>')
 
     fed_sentence = tax_summary.get("federal_sentence")
     if fed_sentence:
         lines.append(f'{p}Federal Income Tax: {_md_to_html(fed_sentence)}</p>')
 
     state_sentences = tax_summary.get("state_sentences", []) or []
-    multi_state = len(state_sentences) > 1
-    for st in state_sentences:
+    state_labels = resolve_tax_summary_labels(state_sentences)
+    for st, label in zip(state_sentences, state_labels):
         sentence = st.get("sentence")
         if not sentence:
             continue
-        if multi_state:
-            abbr = st.get("state_abbreviation") or st.get("state_name", "State")
-            label = f"{abbr} State"
-        else:
-            label = "State"
-        lines.append(f'{p}{label} Income Tax: {_md_to_html(sentence)}</p>')
+        lines.append(f'{p}{escape(label)}: {_md_to_html(sentence)}</p>')
 
     # ── Next Year Estimated Tax Payments ──
     if estimated:
-        lines.append(f'<p style="margin:16px 0 8px 0;"><strong>{next_year} Tax Payment Summary</strong></p>')
+        lines.append(f'<p style="margin:16px 0 8px 0;"><strong>{escaped_next_year} Tax Payment Summary</strong></p>')
 
         has_fed = any((ep.get("federal") or 0) > 0 for ep in estimated)
         has_state = any((ep.get("state") or 0) > 0 for ep in estimated)
@@ -85,7 +85,7 @@ def generate_email_html(data: dict) -> str:
         lines.append('</tr>')
         for ep in estimated:
             lines.append('<tr>')
-            lines.append(f'<td {td}>{ep.get("date", "")}</td>')
+            lines.append(f'<td {td}>{escape(str(ep.get("date", "")))}</td>')
             if has_fed:
                 amt = ep.get("federal") or 0
                 lines.append(f'<td {td}>{"${:,.0f}".format(amt) if amt else "—"}</td>')
@@ -107,7 +107,7 @@ def generate_email_html(data: dict) -> str:
     lines.append('<ol style="margin:0 0 12px 0;padding-left:1.4em;">')
     lines.append('<li>Visit the ShareFile website at <a href="https://www.sharefile.com/">https://www.sharefile.com/</a></li>')
     if subdomain:
-        lines.append(f'<li>Enter &ldquo;{subdomain}&rdquo; as the subdomain</li>')
+        lines.append(f'<li>Enter &ldquo;{escape(str(subdomain))}&rdquo; as the subdomain</li>')
     else:
         lines.append('<li>Enter the firm subdomain</li>')
     lines.append('<li>Enter your email address</li>')
