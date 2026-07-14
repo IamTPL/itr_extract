@@ -1,58 +1,64 @@
-# ITR Extract — CYNU Microsoft Setup (Bestarion thực hiện giùm)
+# ITR Extract — Microsoft 365 Setup Guide
 
-> **Cập nhật 2026-07-11:** CYNU **không có bộ phận IT** (lead xác nhận) → Bestarion sẽ tự thực hiện phần cấu hình Microsoft trên tenant của khách, dùng tài khoản admin do khách cung cấp — giống mô hình đã làm với GoDaddy.
-> File này gồm: **(A)** mẫu email xin quyền truy cập, **(B)** kịch bản từng bước để người của Bestarion thực hiện.
+**For:** CYNU
+**From:** Bestarion — ITR Extract team (Long Tran-Phi, longtp@bestarion.com)
 
----
+The ITR Extract application is live at **https://itr.cynu.com**. Your staff will sign in with their existing CYNU Microsoft work emails — no new accounts or passwords.
 
-## A. Mẫu email gửi khách (tiếng Anh)
+Before that works, Microsoft requires a **one-time approval** from your organization. This guide shows how to do it yourself (**~10 minutes, 2 steps**). If you'd rather have us handle it, see the last section.
 
-> **Subject:** ITR Extract — Microsoft setup (~15 mins)
-
-Hi [Name],
-
-The app is live at **https://itr.cynu.com**. One last step: approving it in your Microsoft 365 — we'll handle this for you, like we did with the domain.
-
-Could you:
-1. Reply with your **Microsoft 365 admin email address** (the account that manages your company email — no password yet);
-2. Suggest a convenient time — at that point we'll need a **temporary password** (you can change it right after) and a **verification code** Microsoft may text you, like the GoDaddy step.
-
-We'll only approve the app and note your organization ID — nothing else will be changed.
-
-Thanks!
-Long — Bestarion
+> **Which account to use:** the Microsoft 365 **administrator** account — the one used to manage your company email and users (it can sign in at admin.microsoft.com). It's usually the account used when your company email was first set up.
 
 ---
 
-## B. Kịch bản thực hiện (người Bestarion làm, khi có tài khoản admin CYNU)
+## Step 1 — Approve the application (one click)
 
-**Chuẩn bị:**
-- Dùng **cửa sổ ẩn danh** (Ctrl+Shift+N) cho TOÀN BỘ phiên làm việc — tránh lẫn session Microsoft của Bestarion.
-- Hẹn khách **online sẵn** để đọc mã OTP (Microsoft nhiều khả năng gửi mã về điện thoại/email của họ).
-- Mở sẵn file này để làm theo từng bước.
+1. Copy this link into your browser and sign in with the admin account:
 
-**Các bước:**
-
-1. **Đăng nhập** tài khoản admin CYNU tại `portal.azure.com` (cửa sổ ẩn danh). Vượt MFA bằng mã khách đọc.
-2. **Lấy Tenant ID:** menu → **Microsoft Entra ID** → **Overview** → copy ô **Tenant ID** → lưu lại (đây là giá trị cho Pha C).
-3. **Grant admin consent:** mở link (cùng cửa sổ ẩn danh đó):
    ```
    https://login.microsoftonline.com/cynu.com/adminconsent?client_id=dca257ea-bb51-40cd-8e80-5e32abd9752e
    ```
-   *(Nếu báo lỗi tenant → thay `cynu.com` trong link bằng Tenant ID vừa lấy ở bước 2.)*
-   Màn hình Microsoft liệt kê đúng **3 quyền** (bảng dưới) → bấm **Accept** → trình duyệt chuyển về `https://itr.cynu.com` là xong.
 
-   | Quyền hiển thị | Ý nghĩa |
-   |---|---|
-   | Sign in and read user profile | Đọc tên/email khi nhân viên CYNU đăng nhập |
-   | Read and write access to user mail | Tạo email **nháp** kết quả trong hộp thư của chính người dùng (không gửi được, không đụng hộp thư người khác) |
-   | Access ITR Extract API | Gọi API của app |
+2. Microsoft shows a "Permissions requested" screen listing exactly the items below → click **Accept**.
+3. The browser then opens the application page (https://itr.cynu.com) — that means the approval is recorded. Done.
 
-4. **Kiểm tra consent đã ghi:** Entra ID → **Enterprise applications** → thấy **ITR_Extraction** xuất hiện trong danh sách (tab Permissions hiển thị 3 quyền granted).
-5. ***(Tùy chọn — chỉ khi khách yêu cầu giới hạn người dùng):*** Enterprise applications → ITR_Extraction → **Properties** → *Assignment required?* = **Yes** → Save → **Users and groups** → thêm đích danh các nhân viên khách chỉ định.
-6. **Đăng xuất + đóng toàn bộ cửa sổ ẩn danh.** Nhắn khách: *"We're done — feel free to change the password now."*
-7. Ghi lại: ngày giờ truy cập, các bước đã làm (đúng danh sách trên, không gì khác) — để minh bạch với khách khi cần.
+**What you are approving** — all permissions are "Delegated", meaning the app acts only on behalf of the person signed in, only while they use it:
 
-**Sau đó (phía hệ thống mình):** thực hiện **Pha C flip** với Tenant ID vừa lấy — theo mục PHA C trong [RUNBOOK-AWS.md](RUNBOOK-AWS.md) hoặc mục 2.7 trong [deploy_tutorial.md](deploy_tutorial.md).
+| Permission shown | What the app uses it for | What it can NOT do |
+|---|---|---|
+| Sign in and read user profile | Read the user's name/email at sign-in | Modify anything |
+| Read and write access to user mail | Create a **draft** email with the extraction results in the signed-in user's **own** mailbox | Send email; access anyone **else's** mailbox; run in the background |
+| Access ITR Extract API | Let the signed-in user use the application | — |
 
-**Nguyên tắc:** chỉ làm đúng các bước trên — không tạo/sửa/xóa user, không đụng cấu hình email, không cài thêm gì vào tenant khách.
+> If the link shows an error mentioning the tenant, do Step 2 first, then replace `cynu.com` in the link with your Tenant ID and retry.
+
+## Step 2 — Send us your Tenant ID
+
+1. Go to **portal.azure.com** and sign in with the same admin account.
+2. In the menu, open **Microsoft Entra ID** → you land on **Overview**.
+3. Copy the value labeled **Tenant ID** (looks like `1234abcd-56ef-...`) and email it to us. It's an identifier, **not a secret**.
+
+Once we have it, we lock the application so that **only CYNU accounts** can sign in — every other Microsoft account (other companies, personal accounts) is rejected. We'll confirm go-live with you right after.
+
+## Optional — Limit which employees can use the app
+
+If you want only specific staff to have access: in **portal.azure.com → Microsoft Entra ID → Enterprise applications → ITR_Extraction** → **Properties** → set **"Assignment required?" = Yes** → Save, then add the employees under **Users and groups**. We're happy to help with this — just ask.
+
+## Good to know — you stay in control
+
+- After approval, the app appears in **your** portal (Entra ID → Enterprise applications → ITR_Extraction). You can review permissions and sign-in activity there anytime.
+- **You can revoke everything at any time** by deleting that entry — the app immediately stops working for all CYNU users.
+- If the app ever needs additional permissions in the future, Microsoft will ask for your approval again — permissions cannot expand silently.
+
+---
+
+## Prefer us to handle it?
+
+No problem — we can do the above for you, like we did with the domain setup:
+
+1. Reply with your **Microsoft 365 admin email address** (no password yet);
+2. Suggest a convenient time — at that point we'll need a **temporary password** (you can change it right after we're done) and a **verification code** Microsoft may text to your phone.
+
+We will only perform the steps in this guide — nothing else in your Microsoft settings will be changed.
+
+**Contact:** Long Tran-Phi — longtp@bestarion.com
