@@ -45,8 +45,11 @@ Hệ thống được xây dựng dưới dạng một **web application** chạ
          │         Toàn bộ PDF → phát hiện trang e-consent (Form 8879, FTB 8453...)
          │
          └──▶ Gọi Gemini AI — Task 2 (song song):
-                   Chỉ trang 1 (cover letter) → trích xuất: tên client, số thuế,
-                   estimated payments, PTE payments
+                   Section bookmark "Letter" (fallback: trang 1) → trích xuất:
+                   tên client, số thuế, estimated payments, PTE payments
+         │
+         └──▶ Code đối chiếu PTE First Payment trên form FTB (nếu có):
+                   chỉ thêm "1st" khi amount + date khớp chính xác
          │
          ▼
 [5] Backend trả về kết quả (không lưu gì trên server):
@@ -96,10 +99,10 @@ Hệ thống được xây dựng dưới dạng một **web application** chạ
 
 | | Task 1 — E-Consent Detection | Task 2 — Email Data Extraction |
 |---|---|---|
-| Input | Toàn bộ PDF (50+ trang) | Chỉ trang 1 (cover letter) |
+| Input | Toàn bộ PDF (50+ trang) | Section bookmark `Letter`; fallback trang 1 |
 | Nhiệm vụ | Quét tìm các trang Form 8879, FTB 8453, v.v. và trả về số trang | Đọc cover letter, trích xuất: tên client, số thuế, estimated payments, PTE payments |
 | Output | `{econsent_pages: [...], econsent_forms: [...]}` | `{tax_summary, estimated_payments, pte_payments, ...}` |
-| Thinking budget | 4096 tokens | 0 (tắt thinking — không cần cho trang đơn) |
+| Thinking budget | 4096 tokens | 0 (tắt thinking — chỉ đọc cover letter) |
 | Timeout | 240s | 120s |
 
 ### Chi phí AI (ước tính)

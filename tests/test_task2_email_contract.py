@@ -100,3 +100,23 @@ def test_all_worked_examples_follow_the_required_schema_contract():
     assert outputs[2]["tax_summary"]["state_sentences"][1]["display_label"] == (
         "OR Metro Income Tax"
     )
+
+
+def test_prompt_accepts_one_or_more_pages_from_bookmarked_letter_section():
+    prompt = PROMPT_PATH.read_text(encoding="utf-8")
+
+    assert "one or more pages" in prompt
+    assert (
+        "bookmarked Letter section, or the first PDF page when that bookmark is unavailable"
+        in prompt
+    )
+    assert "Use ONLY information literally present in the selected cover-letter input." in prompt
+    assert "EXACTLY\nONE PAGE" not in prompt
+
+
+def test_prompt_preserves_only_explicit_pte_ordinals():
+    prompt = PROMPT_PATH.read_text(encoding="utf-8")
+
+    assert "Preserve an ordinal only when the Letter section explicitly prints it" in prompt
+    assert "Never infer an ordinal from the number of PTE entries" in prompt
+    assert 'DO NOT add ordinals "1st"/"2nd" when there is only ONE PTE payment.' not in prompt

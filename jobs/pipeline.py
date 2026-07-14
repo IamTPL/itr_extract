@@ -17,12 +17,7 @@ def run_extraction(pdf_bytes: bytes) -> tuple[dict, str, bytes | None]:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
 
-    src = fitz.open(stream=pdf_bytes, filetype="pdf")
-    out_doc = fitz.open()
-    out_doc.insert_pdf(src, from_page=0, to_page=0)
-    page1_bytes = out_doc.write()
-    out_doc.close()
-    src.close()
+    cover_letter_bytes = itr.extract_cover_letter_bytes(pdf_bytes)
 
     with ThreadPoolExecutor(max_workers=2) as ex:
         f1 = ex.submit(
@@ -32,12 +27,13 @@ def run_extraction(pdf_bytes: bytes) -> tuple[dict, str, bytes | None]:
         )
         f2 = ex.submit(
             itr.call_gemini,
-            page1_bytes, itr.TASK2_PROMPT, itr.TASK2_CONFIG,
+            cover_letter_bytes, itr.TASK2_PROMPT, itr.TASK2_CONFIG,
             api_key, itr.DEFAULT_MODEL, "Task 2",
             itr.TASK2_RESPONSE_SCHEMA,
         )
         t1, _ = f1.result(timeout=_GEMINI_HARD_TIMEOUT_S)
         t2, _ = f2.result(timeout=_GEMINI_HARD_TIMEOUT_S)
+    t2 = itr.apply_ftb_first_pte_ordinal(pdf_bytes, t2)
     analysis_data = {**t2, **t1}
 
     econsent_bytes: bytes | None = None

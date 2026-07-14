@@ -26,6 +26,7 @@ import argparse
 import re
 from pathlib import Path
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 import time
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -58,7 +59,7 @@ GEMINI_PRICING = {
 }
 
 # Per-task generation config — tuned independently because Task 1 scans the whole
-# PDF (reasoning-heavy) while Task 2 reads a single cover-letter page.
+# PDF (reasoning-heavy) while Task 2 reads only the bookmarked Letter section.
 TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 4096, "timeout_s": 240}
 TASK2_CONFIG = {"temperature": 0.0, "thinking_budget": 0,    "timeout_s": 120}
 
@@ -263,6 +264,214 @@ def extract_page1_bytes(source_pdf):
     out.close()
     src.close()
     return data
+
+
+def _letter_page_range(doc):
+    """Return the zero-based inclusive page range for a top-level ``Letter`` bookmark."""
+    if doc.page_count < 1:
+        raise ValueError("PDF contains no pages")
+
+    try:
+        toc = doc.get_toc(simple=True)
+    except (RuntimeError, ValueError):
+        return 0, 0
+
+    for index, entry in enumerate(toc):
+        if len(entry) < 3:
+            continue
+        level, title, page_number = entry[:3]
+        if level != 1 or not isinstance(title, str):
+            continue
+        if title.strip().casefold() != "letter":
+            continue
+        if (
+            not isinstance(page_number, int)
+            or isinstance(page_number, bool)
+            or not 1 <= page_number <= doc.page_count
+        ):
+            continue
+
+        start_page = page_number - 1
+        for next_entry in toc[index + 1:]:
+            if len(next_entry) < 3 or next_entry[0] != 1:
+                continue
+            next_page_number = next_entry[2]
+            if (
+                not isinstance(next_page_number, int)
+                or isinstance(next_page_number, bool)
+                or not page_number < next_page_number <= doc.page_count
+            ):
+                continue
+            return start_page, next_page_number - 2
+
+        # Without a trustworthy top-level boundary, do not leak the rest of
+        # the tax return into Task 2. The bookmark destination page is safe.
+        return start_page, start_page
+
+    return 0, 0
+
+
+def extract_cover_letter_bytes(source_pdf):
+    """Extract a bookmarked ``Letter`` section, or page 1 when none is usable."""
+    if isinstance(source_pdf, (bytes, bytearray, memoryview)):
+        src = fitz.open(stream=bytes(source_pdf), filetype="pdf")
+    else:
+        src = fitz.open(str(source_pdf))
+
+    try:
+        start_page, end_page = _letter_page_range(src)
+        out = fitz.open()
+        try:
+            out.insert_pdf(src, from_page=start_page, to_page=end_page)
+            return out.write()
+        finally:
+            out.close()
+    finally:
+        src.close()
+
+
+_FTB_PART_SECTION_RE = re.compile(
+    r"^\s*Part\s+[IVXLCDM]+\b(?P<section>.*?)(?=^\s*Part\s+[IVXLCDM]+\b|\Z)",
+    flags=re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+_FTB_PTE_HEADING_RE = re.compile(
+    r"Pass-Through\s+Entity\s+\(PTE\)\s+Elective\s+Tax\s+Payment",
+    flags=re.IGNORECASE,
+)
+_FTB_PTE_AMOUNT_RE = re.compile(
+    r"^\s*\d+\s+Amount\b[^\n]*?\$?\s*([0-9][0-9,]*(?:\.[0-9]{0,2})?)\s*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+_NUMERIC_DATE_RE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{4}\b")
+_MONTH_DATE_RE = re.compile(
+    r"\b(?:January|February|March|April|May|June|July|August|September|October|"
+    r"November|December)\s+\d{1,2},\s+\d{4}\b",
+    flags=re.IGNORECASE,
+)
+_PTE_NO_ORDINAL_RE = re.compile(
+    r"\b(?P<year>\d{4})\s+(?P<label>PTE\s+tax\s+payment)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _normalized_amount(value):
+    try:
+        return Decimal(value.replace(",", "").rstrip("."))
+    except (AttributeError, InvalidOperation):
+        return None
+
+
+def _normalized_date(value):
+    for date_format in ("%m/%d/%Y", "%B %d, %Y"):
+        try:
+            candidate = value.title() if "%B" in date_format else value
+            return datetime.strptime(candidate, date_format).date()
+        except (AttributeError, ValueError):
+            continue
+    return None
+
+
+def _ftb_first_pte_evidence(pdf_bytes):
+    """Return filled California e-file Part IV First Payment amount/date pairs."""
+    evidence = set()
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except (RuntimeError, TypeError, ValueError):
+        return evidence
+
+    try:
+        for page in doc:
+            try:
+                text = page.get_text("text", sort=True)
+            except (RuntimeError, ValueError):
+                continue
+            folded = text.casefold()
+            if "california e-file return authorization for" not in folded:
+                continue
+            if not re.search(
+                r"\b8453\s*-\s*(?:C|LLC|PE?)\b",
+                text,
+                flags=re.IGNORECASE,
+            ):
+                continue
+
+            sections = [
+                match.group("section")
+                for match in _FTB_PART_SECTION_RE.finditer(text)
+                if _FTB_PTE_HEADING_RE.search(match.group("section"))
+            ]
+            if len(sections) != 1:
+                continue
+            section = sections[0]
+            if not re.search(r"\bFirst\s+Payment\b", section, flags=re.IGNORECASE):
+                continue
+
+            amounts = _FTB_PTE_AMOUNT_RE.findall(section)
+            dates = _NUMERIC_DATE_RE.findall(section)
+            if len(amounts) != 1 or len(dates) != 1:
+                continue
+            amount = _normalized_amount(amounts[0])
+            payment_date = _normalized_date(dates[0])
+            if amount is not None and amount > 0 and payment_date is not None:
+                evidence.add((amount, payment_date))
+    finally:
+        doc.close()
+    return evidence
+
+
+def _pte_sentence_evidence(sentence):
+    amount_values = re.findall(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)", sentence)
+    date_values = _MONTH_DATE_RE.findall(sentence) + _NUMERIC_DATE_RE.findall(sentence)
+    if len(amount_values) != 1 or len(date_values) != 1:
+        return None
+    amount = _normalized_amount(amount_values[0])
+    payment_date = _normalized_date(date_values[0])
+    if amount is None or payment_date is None:
+        return None
+    return amount, payment_date
+
+
+def apply_ftb_first_pte_ordinal(pdf_bytes, task2_data):
+    """Add ``1st`` only when Task 2 matches filled FTB Part IV evidence."""
+    if not isinstance(task2_data, dict):
+        return task2_data
+
+    result = dict(task2_data)
+    payments = task2_data.get("pte_payments")
+    if task2_data.get("return_type") not in PTE_ELIGIBLE_RETURN_TYPES:
+        return result
+    if not isinstance(payments, list) or not payments:
+        return result
+
+    evidence = _ftb_first_pte_evidence(pdf_bytes)
+    if len(evidence) != 1:
+        return result
+    expected = next(iter(evidence))
+
+    matching_indexes = []
+    for index, payment in enumerate(payments):
+        if not isinstance(payment, dict):
+            continue
+        sentence = payment.get("sentence")
+        if isinstance(sentence, str) and _pte_sentence_evidence(sentence) == expected:
+            matching_indexes.append(index)
+
+    # Duplicate matching rows are ambiguous: never label more than one as first.
+    if len(matching_indexes) != 1:
+        return result
+    target_index = matching_indexes[0]
+    target_sentence = payments[target_index]["sentence"]
+    if not _PTE_NO_ORDINAL_RE.search(target_sentence):
+        return result
+
+    updated_payments = [dict(payment) if isinstance(payment, dict) else payment for payment in payments]
+    updated_payments[target_index]["sentence"] = _PTE_NO_ORDINAL_RE.sub(
+        lambda match: f"{match.group('year')} 1st {match.group('label')}",
+        target_sentence,
+        count=1,
+    )
+    result["pte_payments"] = updated_payments
+    return result
 
 
 def extract_econsent_pdf(source_pdf, page_numbers, output_path):
@@ -595,7 +804,7 @@ Examples:
     print(f"   {'─' * 45}")
 
     pdf_bytes = Path(pdf_path).read_bytes()
-    page1_bytes = extract_page1_bytes(str(pdf_path))
+    cover_letter_bytes = extract_cover_letter_bytes(str(pdf_path))
 
     # Run both calls in parallel — they're independent inputs
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -603,12 +812,13 @@ Examples:
             call_gemini, pdf_bytes, TASK1_PROMPT, TASK1_CONFIG, api_key, args.model, "Task 1"
         )
         fut2 = executor.submit(
-            call_gemini, page1_bytes, TASK2_PROMPT, TASK2_CONFIG, api_key, args.model, "Task 2",
+            call_gemini, cover_letter_bytes, TASK2_PROMPT, TASK2_CONFIG, api_key, args.model, "Task 2",
             TASK2_RESPONSE_SCHEMA,
         )
         task1_data, t1_usage = fut1.result()
         task2_data, t2_usage = fut2.result()
 
+    task2_data = apply_ftb_first_pte_ordinal(pdf_bytes, task2_data)
     analysis_data = {**task2_data, **task1_data}
 
     # Aggregate token usage across both calls

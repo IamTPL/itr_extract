@@ -97,13 +97,14 @@ PENDING ─────────► PROCESSING ─────────►
 |---|---|
 | FR-PDF-1 | Pipeline gọi 2 Gemini task song song (ThreadPoolExecutor, max 2 workers). |
 | FR-PDF-2 | **Task 1 — E-Consent Detection**: input = full PDF, output = list `econsent_pages` (1-indexed) + `econsent_forms[]` (form_number, title, jurisdiction, pages). |
-| FR-PDF-3 | **Task 2 — Email Extraction**: input = page 1 (cover letter), output = `tax_year`, `return_type`, `client.{name,email,address}`, `cpa_firm.{name, sharefile_subdomain}`, federal/state outcomes theo 5 pattern (xem 2.6). |
+| FR-PDF-3 | **Task 2 — Email Extraction**: input = section của top-level bookmark `Letter` (exact match sau trim, không phân biệt hoa/thường); nếu không có bookmark hợp lệ thì dùng page 1. Output = `tax_year`, `return_type`, `client.{name,email,address}`, `cpa_firm.{name, sharefile_subdomain}`, federal/state outcomes theo 5 pattern (xem 2.6). |
 | FR-PDF-4 | Task 1 config: `temperature=0.0, thinking_budget=4096, timeout_s=240`. |
 | FR-PDF-5 | Task 2 config: `temperature=0.0, thinking_budget=0, timeout_s=120` + `TASK2_RESPONSE_SCHEMA` enforced. |
 | FR-PDF-6 | Mỗi Gemini call có 2 attempt với 30s sleep giữa các retry (cho timeout). |
 | FR-PDF-7 | Bất kỳ error nào (timeout, HTTP 4xx/5xx, no candidates, no text, JSON parse fail) MUST `raise RuntimeError(...)`, KHÔNG `sys.exit()` (sẽ kill worker). |
 | FR-PDF-8 | E-consent extraction: tách các page chỉ định bằng `fitz` (PyMuPDF), tạo PDF mới chỉ chứa các page đó. Validate page indices nằm trong khoảng `[1, total_pages]`. |
 | FR-PDF-9 | Email HTML generation: bulletproof Markdown `**bold**` cho keyword + số tiền, parser convert thành HTML `<strong>`. |
+| FR-PDF-10 | PTE ordinal enrichment chạy bằng code sau Task 2, không thêm AI call: chỉ thêm `1st` khi một payment duy nhất khớp chính xác amount + date của trường `First Payment` đã điền trên California FTB 8453-C/8453-LLC/8453-P; nếu thiếu hoặc mơ hồ thì giữ nguyên. |
 
 ### 2.6 Email outcome patterns
 

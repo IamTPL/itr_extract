@@ -28,7 +28,7 @@ FORMS TO DETECT (include all variants known to the IRS and state agencies):
   • Form 8453-F         — Fiduciary e-file Declaration
 
 ── State Forms (detect ANY equivalent across all states) ──
-  • California: FTB 8453, FTB 8453-C, FTB 8453-PE, FTB 8453-LLC, FTB 8879
+  • California: FTB 8453, FTB 8453-C, FTB 8453-P, FTB 8453-LLC, FTB 8879
   • New York: IT-8879, CT-8879, PT-8879
   • Any form with header/title containing: "e-file authorization", "electronic filing authorization",
     "e-consent", "declaration for electronic filing", "e-file signature authorization",

@@ -37,7 +37,7 @@
 - [x] Chuẩn bị Azure (2026-07-09): audience → *"Multiple Entra ID tenants"*; SPA URI `http://localhost:5173`; scope `access_as_user` (Expose an API); 4 quyền Delegated: `User.Read`, `Mail.Read`, `Mail.ReadWrite`, `access_as_user`
 - [x] Diễn tập Pha C — hoàn thành dưới dạng B7 trên domain thật (admin consent Bestarion đã cấp sau khi BoD duyệt; tunnel không còn cần)
 - [x] Pha B — **HOÀN THÀNH 2026-07-11**: B1–B6 ✅ · B7 login + upload PDF OK trên `https://itr.cynu.com` (tenant pin Bestarion; lỗi build dính `.env.local` đã sửa — bài học ghi trong [deploy_tutorial.md](deploy_tutorial.md))
-- [ ] Gửi tài liệu cho IT CYNU ([cynu_it_request.md](cynu_it_request.md)) → chờ họ: admin consent + Tenant ID ← đang ở đây
+- [ ] CYNU **không có IT** (lead xác nhận 2026-07-11) → mình setup giùm phần Microsoft bằng tài khoản admin khách cung cấp — email + kịch bản trong [cynu_it_request.md](cynu_it_request.md) → chờ khách gửi tài khoản/hẹn lịch ← đang ở đây
 - [ ] Pha C — flip sang tenant CYNU (kiến trúc "Đường 1" ✅ chốt 2026-07-09; chờ IT khách: admin consent + Tenant ID)
 
 ---
