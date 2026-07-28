@@ -52,9 +52,9 @@ If you want only specific staff to have access: in **portal.azure.com → Micros
 
 ---
 
-## Prefer us to handle it?
+## Having trouble? We can handle it for you
 
-No problem — we can do the above for you, like we did with the domain setup:
+If any of the above is unclear, or you'd prefer not to do it yourself, we can take care of these steps on your behalf — the same way we handled the domain setup:
 
 1. Reply with your **Microsoft 365 admin email address** (no password yet);
 2. Suggest a convenient time — at that point we'll need a **temporary password** (you can change it right after we're done) and a **verification code** Microsoft may text to your phone.

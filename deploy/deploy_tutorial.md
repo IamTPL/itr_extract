@@ -408,6 +408,16 @@ sudo systemctl reload nginx
 
 ## 2.5 Xem log & chẩn đoán nhanh
 
+**Cách nhanh nhất — script tổng hợp 8 mục** (chạy từ máy bạn, cần chìa SSH ở `~/.ssh/CNY_Key.pem`; chỉ ĐỌC, không sửa gì trên server):
+
+```bash
+bash deploy/checklog.sh
+# 1 dịch vụ · 2 healthz · 3 users đã login · 4 jobs mới nhất
+# 5 thống kê job · 6 upload gần nhất · 7 lỗi 24h · 8 dung lượng đĩa
+```
+
+**Hoặc từng lệnh riêng lẻ (chạy trên server):**
+
 ```bash
 sudo journalctl -u itr-api -f            # log API theo thời gian thực (Ctrl+C để thoát)
 sudo journalctl -u itr-worker -n 100     # 100 dòng log worker gần nhất

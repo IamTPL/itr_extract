@@ -37,8 +37,10 @@
 - [x] Chuẩn bị Azure (2026-07-09): audience → *"Multiple Entra ID tenants"*; SPA URI `http://localhost:5173`; scope `access_as_user` (Expose an API); 4 quyền Delegated: `User.Read`, `Mail.Read`, `Mail.ReadWrite`, `access_as_user`
 - [x] Diễn tập Pha C — hoàn thành dưới dạng B7 trên domain thật (admin consent Bestarion đã cấp sau khi BoD duyệt; tunnel không còn cần)
 - [x] Pha B — **HOÀN THÀNH 2026-07-11**: B1–B6 ✅ · B7 login + upload PDF OK trên `https://itr.cynu.com` (tenant pin Bestarion; lỗi build dính `.env.local` đã sửa — bài học ghi trong [deploy_tutorial.md](deploy_tutorial.md))
-- [ ] CYNU **không có IT** (lead xác nhận 2026-07-11) → gửi khách guide tiếng Anh [cynu_it_request.md](cynu_it_request.md): tự làm 2 bước (option 1) hoặc ủy thác tài khoản admin cho mình làm giùm (option 2) → chờ phản hồi ← đang ở đây
-- [ ] Pha C — flip sang tenant CYNU (kiến trúc "Đường 1" ✅ chốt 2026-07-09; chờ IT khách: admin consent + Tenant ID)
+- [x] Gửi guide cho khách (CYNU không có IT). Jasper (Managing Partner, CNY LLP) thử consent 3 lần → lộ lỗi `AADSTS650052` (gà–trứng: app tự xin scope của chính nó) → **fix 2026-07-29**: pre-authorize chính client trong Expose an API + gỡ dòng permission tự-tham-chiếu (xem Troubleshooting)
+- [x] **Pha C ĐÃ FLIP (2026-07-29, thực hiện từ xa qua SSH):** backend `MSAL_TENANT_ID=43015c3a-45a2-496b-a936-34df61e6c922` + `ENVIRONMENT=production` (validation pass, backup env tại `api.env.bak-phaseC`); FE build lại nướng tenant CYNU (grep kiểm chứng: có `43015c3a`, sạch `57a2790d`/localhost; xóa `.env.local` còn sót); healthz + trang chủ OK từ internet. **Tài khoản Bestarion từ giờ BỊ CHẶN khỏi app — đúng thiết kế**
+- [x] 🎉 **GO-LIVE THÀNH CÔNG (28/7/2026 18:14 UTC):** Jasper Accept lần 4 OK (biên lai nginx `admin_consent=True&tenant=43015c3a…` không error) → **tự đăng nhập luôn**: `jyoon@cynu.com` (tenant CYNU) xuất hiện trong bảng `users`, `GET /api/jobs → 200` dưới chế độ production → **nghiệm thu bàn giao PASS, do chính khách thực hiện**
+- [ ] Hậu kỳ: ① bật backup hằng ngày (DB + files) · ② nhờ IT Bestarion thu hồi consent phía Bestarion (cam kết với anh Hùng) · ③ commit toàn bộ docs deploy · ④ (tùy chọn) reboot server nuốt bản vá kernel ← đang ở đây
 
 ---
 
@@ -54,7 +56,7 @@ Trong runbook có các "chỗ trống" dạng `<...>`. Điền giá trị của 
 | `<GEMINI_KEY>` | Gemini API key | Copy từ file `.env` local (dòng `GEMINI_API_KEY=`) |
 | `<AZURE_CLIENT_ID>` | Client ID app Azure | `dca257ea-bb51-40cd-8e80-5e32abd9752e` *(kiểm tra khớp với `.env` local)* |
 | `<BESTARION_TENANT_ID>` | Tenant ID Bestarion (giai đoạn TEST) | Copy từ portal: Entra ID → Overview → Tenant ID |
-| `<CYNU_TENANT_ID>` | Tenant ID của khách CYNU (PRODUCTION) | `............` (IT khách gửi sau khi admin consent) |
+| `<CYNU_TENANT_ID>` | Tenant ID của khách CYNU (PRODUCTION) | `43015c3a-45a2-496b-a936-34df61e6c922` ✅ *(tự phát hiện 2026-07-15 qua openid-configuration của `cynu.com` — xác nhận lại khi khách consent xong)* |
 
 > **Client ID không phải bí mật** (nó lộ ra trong trình duyệt) nên ghi thẳng được.
 > **Gemini key và mật khẩu DB là bí mật** — không commit, không gửi chat.
@@ -537,6 +539,7 @@ sudo certbot renew --dry-run
 | Job kẹt *pending* mãi | `sudo journalctl -u itr-worker -n 100`; kiểm tra Redis (`redis-cli ping`) |
 | Đăng nhập MS lỗi *redirect_uri mismatch* | `https://<HOST>` chưa được thêm vào Redirect URIs của app Azure (bước B6) |
 | certbot thất bại | `<HOST>` chưa trỏ đúng IP, hoặc port 80 chưa mở (SG + UFW) |
+| Admin consent của tenant KHÁCH báo `AADSTS650052` ("lacks a service principal") | App đang tự xin quyền `access_as_user` của chính nó trong Configured permissions → vòng gà-trứng ở tenant lạ. Fix (portal mình): Expose an API → **Authorized client applications** → pre-authorize chính client ID cho scope `access_as_user`, rồi **Remove** dòng permission `ITR_Extraction/access_as_user` khỏi API permissions → khách bấm lại link là qua. Kiểm chứng: grep `admin_consent` trong nginx access log — thành công = có `tenant=<GUID>` không kèm `error=` (2026-07-28 đã gặp và fix) |
 | API 401 `Wrong tenant` | Tài khoản login không thuộc tenant đang pin trong `MSAL_TENANT_ID` (TEST = Bestarion, PROD = CYNU). Kiểm tra backend env **và** `VITE_MSAL_TENANT_ID` của bản FE đã build — 2 bên phải cùng 1 tenant |
 
 Danh sách đầy đủ các lỗi thường gặp: [docs/SETUP_REPORT.md](../docs/SETUP_REPORT.md) và [deploy/README.md](README.md).
