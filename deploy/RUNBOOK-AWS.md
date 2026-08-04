@@ -563,5 +563,5 @@ Danh sách đầy đủ các lỗi thường gặp: [docs/SETUP_REPORT.md](../do
 - [ ] Frontend đã build lại với `VITE_MSAL_TENANT_ID`
 - [ ] Chỉ tài khoản của khách đăng nhập được; tài khoản ngoài bị chặn
 - [ ] Đã có Elastic IP (IP không đổi khi restart)
-- [ ] Đã bật backup DB + file hằng ngày
+- [x] Đã bật backup DB + file hằng ngày (2026-08-04: `/etc/cron.daily/itr_extract_backup`, giữ 30 ngày; bản đầu tiên đã tạo + test toàn vẹn; cách khôi phục xem deploy_tutorial.md §2.8)
 ```

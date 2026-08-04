@@ -450,7 +450,33 @@ Tóm tắt (chi tiết đầy đủ: mục **PHA C** trong [RUNBOOK-AWS.md](RUNB
 3. Frontend: sửa `.env.production` → `VITE_MSAL_TENANT_ID=<tenant-khách>` → build lại + rsync (quy trình 2.2).
 4. Kiểm tra: chỉ tài khoản khách đăng nhập được; tài khoản Bestarion bị chặn.
 
-## 2.8 Quy tắc an toàn
+## 2.8 Backup & khôi phục
+
+**Backup tự động** (đã cài 2026-08-04): script `/etc/cron.daily/itr_extract_backup` chạy mỗi ngày — dump DB + nén thư mục PDF vào `/var/lib/itr_extract` → lưu tại `/var/backups/itr_extract/` (root-only), giữ 30 ngày. Kiểm tra: `sudo ls -la /var/backups/itr_extract/`.
+
+**Khôi phục khi cần** (thay `YYYYMMDD` bằng ngày muốn khôi phục):
+
+```bash
+# 1. Dừng app trước khi khôi phục DB
+sudo systemctl stop itr-api itr-worker
+
+# 2. Khôi phục database (XÓA dữ liệu hiện tại — chắc chắn rồi mới chạy!)
+sudo -u postgres dropdb itr_extract
+sudo -u postgres createdb -O itr itr_extract
+sudo bash -c "zcat /var/backups/itr_extract/db-YYYYMMDD.sql.gz | sudo -u postgres psql -d itr_extract"
+
+# 3. Khôi phục file PDF
+sudo tar xzf /var/backups/itr_extract/files-YYYYMMDD.tgz -C /var/lib/itr_extract
+sudo chown -R ubuntu:ubuntu /var/lib/itr_extract
+
+# 4. Bật lại app + kiểm tra
+sudo systemctl start itr-api itr-worker
+curl -s http://127.0.0.1:8000/healthz
+```
+
+> Giới hạn: backup nằm cùng ổ đĩa server — chống "xóa nhầm/hỏng dữ liệu", không chống "mất nguyên ổ". Lớp bổ sung: nhờ IT quản AWS bật **EBS snapshot định kỳ** cho volume của instance.
+
+## 2.9 Quy tắc an toàn
 
 - **Không commit bí mật** (mật khẩu DB, Gemini key) lên git — bí mật chỉ nằm trong `/etc/itr_extract/`.
 - **Không sửa code trực tiếp trên server** — mọi thay đổi code đi qua GitHub rồi `git pull` (server chỉ được sửa tay: env + nginx config).
