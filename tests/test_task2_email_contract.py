@@ -8,13 +8,6 @@ from schemas import TASK2_RESPONSE_SCHEMA
 PROMPT_PATH = Path("prompts/task2_email.txt")
 
 
-def _state_item_schema():
-    return (
-        TASK2_RESPONSE_SCHEMA["properties"]["tax_summary"]["properties"]
-        ["state_sentences"]["items"]
-    )
-
-
 def _worked_example_outputs(prompt):
     blocks = re.findall(
         r"EXPECTED OUTPUT:\n(?P<body>  \{.*?^  \})",
@@ -55,68 +48,69 @@ def _assert_matches_schema(value, schema, path="$"):
             _assert_matches_schema(child, schema["items"], f"{path}[{index}]")
 
 
-def test_display_label_is_required_and_nullable():
-    item = _state_item_schema()
-
-    assert "display_label" in item["required"]
-    assert item["properties"]["display_label"] == {
-        "type": "STRING",
-        "nullable": True,
-    }
+def test_schema_top_level_contract():
+    props = set(TASK2_RESPONSE_SCHEMA["properties"])
+    assert {"jurisdictions", "scheduled_payments"} <= props
+    assert "tax_summary" not in props and "estimated_payments" not in props
 
 
-def test_prompt_defines_state_local_and_regional_jurisdictions():
-    prompt = PROMPT_PATH.read_text(encoding="utf-8")
-
-    assert '"state_name": "string — full state, local, or regional jurisdiction name"' in prompt
-    assert "host state's USPS" in prompt
-    assert "local or regional" in prompt
-
-
-def test_prompt_defines_display_label_rules_and_metro_example():
-    prompt = PROMPT_PATH.read_text(encoding="utf-8")
-
-    assert '"display_label": "string|null' in prompt
-    assert '"display_label": null' in prompt
-    assert '"display_label": "OR Metro Income Tax"' in prompt
-    assert "Ordinary state tax: set display_label to null" in prompt
-    assert "A state plus a local or regional tax is not a multi-state return" in prompt
+def test_enums_are_not_nullable():
+    def walk(schema, path="$"):
+        if isinstance(schema, dict):
+            if "enum" in schema:
+                assert schema.get("nullable") is not True, path
+            for key, child in schema.items():
+                walk(child, f"{path}.{key}")
+        elif isinstance(schema, list):
+            for index, child in enumerate(schema):
+                walk(child, f"{path}[{index}]")
+    walk(TASK2_RESPONSE_SCHEMA)
 
 
-def test_all_worked_examples_follow_the_required_schema_contract():
-    prompt = PROMPT_PATH.read_text(encoding="utf-8")
-    outputs = _worked_example_outputs(prompt)
+def test_worked_examples_match_schema():
+    prompt = PROMPT_PATH.read_text()
+    examples = _worked_example_outputs(prompt)
+    assert len(examples) == 6
+    for index, example in enumerate(examples):
+        _assert_matches_schema(example, TASK2_RESPONSE_SCHEMA, f"example[{index}]")
 
-    assert len(outputs) == 3
-    for output in outputs:
-        _assert_matches_schema(output, TASK2_RESPONSE_SCHEMA)
 
-    ordinary_rows = [
-        outputs[0]["tax_summary"]["state_sentences"][0],
-        *outputs[1]["tax_summary"]["state_sentences"],
-        outputs[2]["tax_summary"]["state_sentences"][0],
-    ]
-    assert all(row["display_label"] is None for row in ordinary_rows)
-    assert outputs[2]["tax_summary"]["state_sentences"][1]["display_label"] == (
-        "OR Metro Income Tax"
+def test_worked_examples_cover_decision_space():
+    examples = _worked_example_outputs(PROMPT_PATH.read_text())
+    methods = {j["balance_due"]["payment_method"]
+               for e in examples for j in e["jurisdictions"] if j["balance_due"]}
+    assert {"direct_debit", "mail_check"} <= methods
+    kinds = {p["type"] for e in examples for p in e["scheduled_payments"]}
+    assert {"estimated", "annual", "pte"} <= kinds
+    labels = {j.get("display_label") for e in examples for j in e["jurisdictions"]}
+    assert "CA LLC Income Tax" in labels
+    assert any(p["type"] == "annual" for e in examples for p in e["scheduled_payments"])
+    assert any(((j.get("overpayment") or {}).get("total") or 0) >
+               ((j.get("overpayment") or {}).get("credited_next_year", 0) +
+                (j.get("overpayment") or {}).get("refunded", 0))
+               for e in examples for j in e["jurisdictions"] if j.get("overpayment"))
+
+
+def test_worked_examples_render_cleanly():
+    """Mỗi example phải render trọn vẹn bằng renderer thật — không mục nào rơi vào van xả."""
+    from jobs import summary_sentences as ss
+
+    for example in _worked_example_outputs(PROMPT_PATH.read_text()):
+        next_year = example["next_year"]
+        for j in example["jurisdictions"]:
+            assert ss.jurisdiction_sentence(j, next_year) is not None, j
+        for e in example["scheduled_payments"]:
+            if e["type"] != "estimated":
+                assert ss.scheduled_sentence(e, next_year) is not None, e
+
+
+def test_kramer_example_produces_p1c():
+    from jobs import summary_sentences as ss
+
+    examples = _worked_example_outputs(PROMPT_PATH.read_text())
+    kramer_fed = examples[2]["jurisdictions"][0]
+    sentence = ss.jurisdiction_sentence(kramer_fed, "2026")
+    assert sentence == (
+        "**Balance due** of **$130,828**, see the voucher on the Client "
+        "Portal, due on or before **August 26, 2026**."
     )
-
-
-def test_prompt_accepts_one_or_more_pages_from_bookmarked_letter_section():
-    prompt = PROMPT_PATH.read_text(encoding="utf-8")
-
-    assert "one or more pages" in prompt
-    assert (
-        "bookmarked Letter section, or the first PDF page when that bookmark is unavailable"
-        in prompt
-    )
-    assert "Use ONLY information literally present in the selected cover-letter input." in prompt
-    assert "EXACTLY\nONE PAGE" not in prompt
-
-
-def test_prompt_preserves_only_explicit_pte_ordinals():
-    prompt = PROMPT_PATH.read_text(encoding="utf-8")
-
-    assert "Preserve an ordinal only when the Letter section explicitly prints it" in prompt
-    assert "Never infer an ordinal from the number of PTE entries" in prompt
-    assert 'DO NOT add ordinals "1st"/"2nd" when there is only ONE PTE payment.' not in prompt

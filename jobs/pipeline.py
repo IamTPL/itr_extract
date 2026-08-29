@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import main as itr
 from config.settings import get_settings
 from jobs.email_html import generate_email_html
+from jobs.facts_validation import letter_text_from_pdf, validate_facts
 
 # Hard cap mỗi Gemini call. Phải nhỏ hơn JOB_TIMEOUT_SECONDS (300s)
 # để worker không bị arq kill trước khi raise TimeoutError có ý nghĩa.
@@ -33,6 +34,7 @@ def run_extraction(pdf_bytes: bytes) -> tuple[dict, str, bytes | None]:
         )
         t1, _ = f1.result(timeout=_GEMINI_HARD_TIMEOUT_S)
         t2, _ = f2.result(timeout=_GEMINI_HARD_TIMEOUT_S)
+    t2 = validate_facts(t2, letter_text_from_pdf(cover_letter_bytes))
     t2 = itr.apply_ftb_first_pte_ordinal(pdf_bytes, t2)
     analysis_data = {**t2, **t1}
 

@@ -2,13 +2,20 @@ import re
 from html import escape
 
 from config.constants import INVOICE_BRAND_NAME
+from jobs import summary_sentences as ss
 from jobs.tax_labels import resolve_tax_summary_labels
-from main import PTE_ELIGIBLE_RETURN_TYPES
 
 
 def _md_to_html(text: str) -> str:
     """Escape dynamic text, then convert **bold** markers to safe HTML tags."""
     return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(text))
+
+
+def _review_div(prefix: str, item: dict) -> str:
+    body = escape(f"{prefix}{ss.review_note(item)}") if prefix else escape(ss.review_note(item))
+    return ('<div style="background:#fff3cd;border:1px solid #e0a800;'
+            'border-radius:4px;padding:8px 12px;margin:0 0 10px 0;">'
+            f"{body}</div>")
 
 
 def generate_email_html(data: dict) -> str:
@@ -22,9 +29,6 @@ def generate_email_html(data: dict) -> str:
     next_year = str(int(tax_year) + 1) if tax_year.isdigit() else ""
     escaped_tax_year = escape(tax_year)
     escaped_next_year = escape(next_year)
-    tax_summary = data.get("tax_summary", {}) or {}
-    estimated = data.get("estimated_payments", []) or []
-    return_type = data.get("return_type")
     subdomain = firm.get("sharefile_subdomain", "")
 
     p = '<p style="margin:0 0 10px 0;">'
@@ -45,34 +49,41 @@ def generate_email_html(data: dict) -> str:
     # ── Current Year Tax Payment Summary ──
     lines.append(f'<p style="margin:16px 0 8px 0;"><strong>{escaped_tax_year} Tax Payment Summary</strong></p>')
 
-    fed_sentence = tax_summary.get("federal_sentence")
-    if fed_sentence:
-        lines.append(f'{p}Federal Income Tax: {_md_to_html(fed_sentence)}</p>')
+    jurisdictions = data.get("jurisdictions", []) or []
+    scheduled = data.get("scheduled_payments", []) or []
+    federal = next((j for j in jurisdictions if ss.is_federal(j.get("jurisdiction_name"))), None)
+    states = [j for j in jurisdictions if j is not federal]
 
-    state_sentences = tax_summary.get("state_sentences", []) or []
-    state_labels = resolve_tax_summary_labels(state_sentences)
-    for st, label in zip(state_sentences, state_labels):
-        sentence = st.get("sentence")
-        if not sentence:
-            continue
-        lines.append(f'{p}{escape(label)}: {_md_to_html(sentence)}</p>')
+    if federal is not None:
+        sentence = ss.jurisdiction_sentence(federal, next_year)
+        if sentence is None:
+            lines.append(_review_div("Federal Income Tax: ", federal))
+        else:
+            lines.append(f'{p}Federal Income Tax: {_md_to_html(sentence)}</p>')
 
-    # ── Next Year Estimated Tax Payments ──
-    if estimated:
+    labels = resolve_tax_summary_labels(
+        [{**j, "state_name": j.get("jurisdiction_name")} for j in states]
+    )
+    for j, label in zip(states, labels):
+        sentence = ss.jurisdiction_sentence(j, next_year)
+        if sentence is None:
+            lines.append(_review_div(f"{label}: ", j))
+        else:
+            lines.append(f'{p}{escape(label)}: {_md_to_html(sentence)}</p>')
+
+    # ── Next Year Tax Payment Summary ──
+    est = ss.estimated_entries(scheduled)
+    others = [e for e in scheduled if e.get("type") != "estimated" or e.get("needs_review")]
+    if est or others:
         lines.append(f'<p style="margin:16px 0 8px 0;"><strong>{escaped_next_year} Tax Payment Summary</strong></p>')
 
-        has_fed = any((ep.get("federal") or 0) > 0 for ep in estimated)
-        has_state = any((ep.get("state") or 0) > 0 for ep in estimated)
+    if est:
+        lines.append(f'{p}{escape(ss.estimated_intro(est))}</p>')
 
-        if has_fed and has_state:
-            intro = "Federal and state estimated tax payments"
-        elif has_fed:
-            intro = "Federal estimated tax payments"
-        else:
-            intro = "State estimated tax payments"
-        lines.append(f'{p}{intro} will be automatically withdrawn as shown below</p>')
+        rows = ss.estimated_rows(est)
+        has_fed = any(row["federal"] for row in rows)
+        has_state = any(row["state"] for row in rows)
 
-        # Table
         td = 'style="border:1px solid #ccc;padding:6px 10px;"'
         th = 'style="border:1px solid #ccc;padding:6px 10px;background:#f2f2f2;font-weight:bold;"'
         lines.append('<table style="border-collapse:collapse;font-size:10pt;margin-bottom:12px;">')
@@ -83,24 +94,22 @@ def generate_email_html(data: dict) -> str:
         if has_state:
             lines.append(f'<th {th}>State</th>')
         lines.append('</tr>')
-        for ep in estimated:
+        for row in rows:
             lines.append('<tr>')
-            lines.append(f'<td {td}>{escape(str(ep.get("date", "")))}</td>')
+            lines.append(f'<td {td}>{escape(row["date"])}</td>')
             if has_fed:
-                amt = ep.get("federal") or 0
-                lines.append(f'<td {td}>{"${:,.0f}".format(amt) if amt else "—"}</td>')
+                amt = row["federal"]
+                lines.append(f'<td {td}>{ss.format_amount(amt) if amt else "—"}</td>')
             if has_state:
-                amt = ep.get("state") or 0
-                lines.append(f'<td {td}>{"${:,.0f}".format(amt) if amt else "—"}</td>')
+                amt = row["state"]
+                lines.append(f'<td {td}>{ss.format_amount(amt) if amt else "—"}</td>')
             lines.append('</tr>')
         lines.append('</table>')
 
-    # ── PTE Payments (passthrough returns only) ──
-    if return_type in PTE_ELIGIBLE_RETURN_TYPES:
-        for pte in data.get("pte_payments", []) or []:
-            sentence = pte.get("sentence")
-            if sentence:
-                lines.append(f'{p}{_md_to_html(sentence)}</p>')
+    for e in others:
+        sentence = ss.scheduled_sentence(e, next_year)
+        lines.append(_review_div("", e) if sentence is None
+                     else f'{p}{_md_to_html(sentence)}</p>')
 
     # ── ShareFile Instructions ──
     lines.append(f'<p style="margin:16px 0 8px 0;"><strong>Instructions for Accessing ShareFile</strong></p>')

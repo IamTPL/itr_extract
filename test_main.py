@@ -3,6 +3,7 @@
 Run:  python3 test_main.py -v
 """
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -34,6 +35,40 @@ def _page_texts(pdf_bytes):
         return [page.get_text().strip() for page in doc]
     finally:
         doc.close()
+
+
+def _jur(name, abbr=None, label=None, outcome="no_tax", balance_due=None,
+         overpayment=None, quote="q", note=None):
+    """Facts-shape jurisdiction fixture (mirrors tests/test_email_rendering.py)."""
+    return {"jurisdiction_name": name, "state_abbreviation": abbr,
+            "display_label": label, "outcome": outcome,
+            "balance_due": balance_due, "overpayment": overpayment,
+            "source_quote": quote, "other_note": note}
+
+
+def _pte_entry(amount=10500, date="06/15/2026", ordinal=None, **over):
+    """Facts-shape ``scheduled_payments`` PTE entry fixture."""
+    entry = {"type": "pte", "jurisdiction": "California", "amount": amount,
+             "date": date, "payment_method": "direct_debit", "ordinal": ordinal,
+             "source_quote": "q", "note": None}
+    entry.update(over)
+    return entry
+
+
+def _docx_data(jurisdictions, return_type="Individual (1040)", firm=None):
+    return {
+        "client": {"name": "C"},
+        "cpa_firm": firm or {"name": "CNY LLP", "sharefile_subdomain": "cnyllp"},
+        "tax_year": "2025",
+        "return_type": return_type,
+        "jurisdictions": list(jurisdictions),
+        "scheduled_payments": [],
+    }
+
+
+def _docx_text(path):
+    doc = Document(path)
+    return "\n".join(paragraph.text for paragraph in doc.paragraphs)
 
 
 class TestMarkdownParagraph(unittest.TestCase):
@@ -187,17 +222,10 @@ First Payment
 Part V Banking Information
 """
 
-    def _task2_data(self, sentence=None, return_type="S-Corporation (1120S)"):
+    def _task2_data(self, amount=10500, date="06/15/2026", return_type="S-Corporation (1120S)"):
         return {
             "return_type": return_type,
-            "pte_payments": [
-                {
-                    "sentence": sentence or (
-                        "2026 PTE tax payment of **$10,500** will be automatically "
-                        "withdrawn on **June 15, 2026**."
-                    )
-                }
-            ],
+            "scheduled_payments": [_pte_entry(amount=amount, date=date)],
         }
 
     def test_adds_first_only_when_form_amount_and_date_match(self):
@@ -206,12 +234,8 @@ Part V Banking Information
 
         result = itr.apply_ftb_first_pte_ordinal(pdf_bytes, task2_data)
 
-        self.assertEqual(
-            result["pte_payments"][0]["sentence"],
-            "2026 1st PTE tax payment of **$10,500** will be automatically "
-            "withdrawn on **June 15, 2026**.",
-        )
-        self.assertNotIn("1st", task2_data["pte_payments"][0]["sentence"])
+        self.assertEqual(result["scheduled_payments"][0]["ordinal"], "1st")
+        self.assertIsNone(task2_data["scheduled_payments"][0]["ordinal"])
 
     def test_supports_filled_ftb_llc_first_payment_for_partnership_return(self):
         llc_form = (
@@ -230,7 +254,7 @@ Part V Banking Information
             self._task2_data(return_type="Partnership (1065)"),
         )
 
-        self.assertIn("2026 1st PTE tax payment", result["pte_payments"][0]["sentence"])
+        self.assertEqual(result["scheduled_payments"][0]["ordinal"], "1st")
 
     def test_supports_official_ftb_8453_p_partnership_section(self):
         partnership_form = (
@@ -251,24 +275,22 @@ Part V Banking Information
             self._task2_data(return_type="Partnership (1065)"),
         )
 
-        self.assertIn("2026 1st PTE tax payment", result["pte_payments"][0]["sentence"])
+        self.assertEqual(result["scheduled_payments"][0]["ordinal"], "1st")
 
     def test_amount_or_date_mismatch_does_not_add_first(self):
         pdf_bytes = _make_pdf_bytes([self.FORM_PAGE])
         cases = (
-            "2026 PTE tax payment of **$10,501** will be automatically withdrawn "
-            "on **June 15, 2026**.",
-            "2026 PTE tax payment of **$10,500** will be automatically withdrawn "
-            "on **June 16, 2026**.",
+            {"amount": 10501, "date": "06/15/2026"},
+            {"amount": 10500, "date": "06/16/2026"},
         )
 
-        for sentence in cases:
-            with self.subTest(sentence=sentence):
+        for case in cases:
+            with self.subTest(case=case):
                 result = itr.apply_ftb_first_pte_ordinal(
                     pdf_bytes,
-                    self._task2_data(sentence),
+                    self._task2_data(**case),
                 )
-                self.assertEqual(result["pte_payments"][0]["sentence"], sentence)
+                self.assertIsNone(result["scheduled_payments"][0]["ordinal"])
 
     def test_blank_or_unofficial_first_payment_text_does_not_add_first(self):
         pages = (
@@ -282,56 +304,148 @@ Part V Banking Information
                     _make_pdf_bytes([page_text]),
                     self._task2_data(),
                 )
-                self.assertNotIn("1st", result["pte_payments"][0]["sentence"])
+                self.assertIsNone(result["scheduled_payments"][0]["ordinal"])
 
     def test_existing_ordinal_and_ineligible_return_are_unchanged(self):
         pdf_bytes = _make_pdf_bytes([self.FORM_PAGE])
-        already_first = self._task2_data(
-            "2026 1st PTE tax payment of **$10,500** will be automatically withdrawn "
-            "on **June 15, 2026**."
-        )
-        noncanonical_ordinal = self._task2_data(
-            "2026 1st California PTE tax payment of **$10,500** will be automatically "
-            "withdrawn on **June 15, 2026**."
-        )
+        already_first = {
+            "return_type": "S-Corporation (1120S)",
+            "scheduled_payments": [_pte_entry(ordinal="1st")],
+        }
         individual = self._task2_data(return_type="Individual (1040)")
 
         existing_result = itr.apply_ftb_first_pte_ordinal(pdf_bytes, already_first)
-        noncanonical_result = itr.apply_ftb_first_pte_ordinal(
-            pdf_bytes,
-            noncanonical_ordinal,
-        )
         ineligible_result = itr.apply_ftb_first_pte_ordinal(pdf_bytes, individual)
 
         self.assertEqual(existing_result, already_first)
-        self.assertEqual(noncanonical_result, noncanonical_ordinal)
         self.assertEqual(ineligible_result, individual)
 
     def test_duplicate_matching_pte_rows_are_left_unchanged(self):
         pdf_bytes = _make_pdf_bytes([self.FORM_PAGE])
         task2_data = self._task2_data()
-        task2_data["pte_payments"].append(dict(task2_data["pte_payments"][0]))
+        task2_data["scheduled_payments"].append(dict(task2_data["scheduled_payments"][0]))
 
         result = itr.apply_ftb_first_pte_ordinal(pdf_bytes, task2_data)
 
         self.assertEqual(result, task2_data)
         self.assertTrue(
-            all("1st" not in payment["sentence"] for payment in result["pte_payments"])
+            all(payment["ordinal"] is None for payment in result["scheduled_payments"])
         )
 
     def test_only_matching_row_changes_when_other_pte_payment_differs(self):
         pdf_bytes = _make_pdf_bytes([self.FORM_PAGE])
         task2_data = self._task2_data()
-        other_sentence = (
-            "2026 PTE tax payment of **$4,000** will be automatically withdrawn "
-            "on **September 15, 2026**."
-        )
-        task2_data["pte_payments"].append({"sentence": other_sentence})
+        other_entry = _pte_entry(amount=4000, date="09/15/2026")
+        task2_data["scheduled_payments"].append(other_entry)
 
         result = itr.apply_ftb_first_pte_ordinal(pdf_bytes, task2_data)
 
-        self.assertIn("2026 1st PTE tax payment", result["pte_payments"][0]["sentence"])
-        self.assertEqual(result["pte_payments"][1]["sentence"], other_sentence)
+        self.assertEqual(result["scheduled_payments"][0]["ordinal"], "1st")
+        self.assertIsNone(result["scheduled_payments"][1]["ordinal"])
+
+
+class TestGenerateEmailDocx(unittest.TestCase):
+    """DOCX-render regression tests (moved here from tests/test_email_rendering.py
+    when Task 6 split the HTML/DOCX renderers; fixtures updated to the facts shape)."""
+
+    def _im_data(self):
+        return _docx_data([
+            _jur("Federal", outcome="refund_or_credit", overpayment={"refunded": 8647}),
+            _jur("Oregon", abbr="OR", outcome="refund_or_credit", overpayment={"refunded": 7447}),
+            _jur("Oregon Metro Supportive Housing Services", abbr="OR",
+                 label="OR Metro Income Tax", outcome="refund_or_credit",
+                 overpayment={"refunded": 349}),
+        ])
+
+    def _hong_data(self):
+        return _docx_data([
+            _jur("Federal", outcome="refund_or_credit", overpayment={"refunded": 951}),
+            _jur("California", abbr="CA", outcome="refund_or_credit", overpayment={"refunded": 297}),
+        ])
+
+    def test_docx_combines_cny_brand_and_correct_im_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = str(Path(tmp) / "im.docx")
+            itr.generate_email_docx(self._im_data(), output)
+            text = _docx_text(output)
+
+        federal_line = (
+            "Federal Income Tax: No tax is payable with the filing of this return. "
+            "Refund of $8,647 will be deposited to your account."
+        )
+        state_line = (
+            "State Income Tax: No tax is payable with the filing of this return. "
+            "Refund of $7,447 will be deposited to your account."
+        )
+        metro_line = (
+            "OR Metro Income Tax: No tax is payable with the filing of this return. "
+            "Refund of $349 will be deposited to your account."
+        )
+
+        self.assertIn("Your 2025 Income Tax Return and CNY invoice are now available", text)
+        self.assertIn(federal_line, text)
+        self.assertIn(state_line, text)
+        self.assertIn(metro_line, text)
+        self.assertLess(text.index(federal_line), text.index(state_line))
+        self.assertLess(text.index(state_line), text.index(metro_line))
+        self.assertNotIn("OR State Income Tax", text)
+        self.assertIn('Enter "cnyllp" as the subdomain', text)
+
+    def test_hong_refunds_remain_associated_with_the_correct_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = str(Path(tmp) / "hong.docx")
+            itr.generate_email_docx(self._hong_data(), output)
+            text = _docx_text(output)
+
+        self.assertIn(
+            "Federal Income Tax: No tax is payable with the filing of this return. "
+            "Refund of $951 will be deposited to your account.",
+            text,
+        )
+        self.assertIn(
+            "State Income Tax: No tax is payable with the filing of this return. "
+            "Refund of $297 will be deposited to your account.",
+            text,
+        )
+
+    def test_docx_renders_bold_review_paragraphs_when_sentence_functions_return_none(self):
+        data = _docx_data([
+            _jur("Federal", outcome="other", note="Client must pay by money order",
+                 quote="Mail a money order to..."),
+            _jur("California", abbr="CA", outcome="refund_or_credit",
+                 overpayment={"refunded": 100}),
+        ])
+        data["scheduled_payments"] = [
+            {"type": "other", "jurisdiction": "California", "amount": 1,
+             "date": "04/15/2026", "payment_method": "unspecified",
+             "ordinal": None, "source_quote": "q", "note": "unclear line item"},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = str(Path(tmp) / "review.docx")
+            itr.generate_email_docx(data, output)
+            paragraphs = list(Document(output).paragraphs)
+
+        federal_review = next(p for p in paragraphs if p.text.startswith("Federal Income Tax: "))
+        other_review = next(p for p in paragraphs if "unclear line item" in p.text)
+
+        self.assertIn("NEEDS REVIEW", federal_review.text)
+        self.assertIn("Client must pay by money order", federal_review.text)
+        self.assertIn('Mail a money order to..."', federal_review.text)
+        self.assertTrue(federal_review.runs)
+        self.assertTrue(all(run.font.bold for run in federal_review.runs))
+
+        self.assertIn("NEEDS REVIEW", other_review.text)
+        self.assertTrue(other_review.runs)
+        self.assertTrue(all(run.font.bold for run in other_review.runs))
+
+        # California's valid refund sentence must still render normally alongside the review block.
+        state_text = "\n".join(p.text for p in paragraphs)
+        self.assertIn(
+            "State Income Tax: No tax is payable with the filing of this return. "
+            "Refund of $100 will be deposited to your account.",
+            state_text,
+        )
 
 
 if __name__ == "__main__":

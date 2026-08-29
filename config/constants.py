@@ -40,3 +40,6 @@ HEALTH_CHECK_TIMEOUT_SECONDS = 5
 
 # ── Email presentation ──
 INVOICE_BRAND_NAME = "CNY"
+
+# Loại return được phép có PTE elective tax (dùng bởi validation + renderer).
+PTE_ELIGIBLE_RETURN_TYPES = {"S-Corporation (1120S)", "Partnership (1065)"}

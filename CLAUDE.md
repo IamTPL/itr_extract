@@ -63,3 +63,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+---
+
+## Testing This Project
+
+**Read `docs/TESTING.md` before changing `prompts/`, `jobs/summary_sentences.py`, `jobs/facts_validation.py`, `jobs/email_html.py`, or `schemas.py`** — it maps each kind of change to the right test tier and explains how to regenerate fixtures.
+
+- Full suite: `venv/bin/python -m pytest`. Gate = **no NEW failures**.
+- 2 known pre-existing failures (NOT yours to fix): `tests/test_auth_jwt.py::test_unknown_kid_rejected`, `tests/test_jobs_retention.py::test_cap_evicts_oldest_when_exceeded`.
+- The golden regression suite (`tests/test_golden_cases.py`) freezes verified outputs for all confirmed sample + production files and runs offline (no Gemini, no PDFs). If it fails after your change: read the diff. Intended wording change → `UPDATE_GOLDENS=1 venv/bin/python -m pytest tests/test_golden_cases.py`, then re-run pytest and show the golden diff to the user. NEVER hand-edit golden files.
+- Golden fixtures (`tests/golden/cases/`) contain client data — gitignored, never commit them.

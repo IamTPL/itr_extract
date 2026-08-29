@@ -63,8 +63,7 @@ GEMINI_PRICING = {
 TASK1_CONFIG = {"temperature": 0.0, "thinking_budget": 4096, "timeout_s": 240}
 TASK2_CONFIG = {"temperature": 0.0, "thinking_budget": 0,    "timeout_s": 120}
 
-# Return types eligible for PTE elective tax (hard whitelist, also enforced in prompt).
-PTE_ELIGIBLE_RETURN_TYPES = {"S-Corporation (1120S)", "Partnership (1065)"}
+from config.constants import PTE_ELIGIBLE_RETURN_TYPES  # noqa: F401 (re-export cho jobs.email_html)
 
 # ═══════════════════════════════════════════════════════════════════
 # PROMPTS & SCHEMAS — loaded from external files
@@ -78,6 +77,8 @@ TASK2_PROMPT = (_PROMPTS_DIR / "task2_email.txt").read_text(encoding="utf-8")
 from schemas import TASK2_RESPONSE_SCHEMA  # noqa: E402
 from config.constants import INVOICE_BRAND_NAME  # noqa: E402
 from jobs.tax_labels import resolve_tax_summary_labels  # noqa: E402
+from jobs import summary_sentences as ss  # noqa: E402
+from jobs.facts_validation import letter_text_from_pdf, validate_facts  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -343,15 +344,6 @@ _FTB_PTE_AMOUNT_RE = re.compile(
     flags=re.IGNORECASE | re.MULTILINE,
 )
 _NUMERIC_DATE_RE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{4}\b")
-_MONTH_DATE_RE = re.compile(
-    r"\b(?:January|February|March|April|May|June|July|August|September|October|"
-    r"November|December)\s+\d{1,2},\s+\d{4}\b",
-    flags=re.IGNORECASE,
-)
-_PTE_NO_ORDINAL_RE = re.compile(
-    r"\b(?P<year>\d{4})\s+(?P<label>PTE\s+tax\s+payment)\b",
-    flags=re.IGNORECASE,
-)
 
 
 def _normalized_amount(value):
@@ -419,58 +411,41 @@ def _ftb_first_pte_evidence(pdf_bytes):
     return evidence
 
 
-def _pte_sentence_evidence(sentence):
-    amount_values = re.findall(r"\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)", sentence)
-    date_values = _MONTH_DATE_RE.findall(sentence) + _NUMERIC_DATE_RE.findall(sentence)
-    if len(amount_values) != 1 or len(date_values) != 1:
-        return None
-    amount = _normalized_amount(amount_values[0])
-    payment_date = _normalized_date(date_values[0])
-    if amount is None or payment_date is None:
-        return None
-    return amount, payment_date
-
-
 def apply_ftb_first_pte_ordinal(pdf_bytes, task2_data):
-    """Add ``1st`` only when Task 2 matches filled FTB Part IV evidence."""
+    """Set ordinal='1st' on the single PTE facts entry matching filled FTB Part IV evidence."""
     if not isinstance(task2_data, dict):
         return task2_data
-
     result = dict(task2_data)
-    payments = task2_data.get("pte_payments")
-    if task2_data.get("return_type") not in PTE_ELIGIBLE_RETURN_TYPES:
+    if result.get("return_type") not in PTE_ELIGIBLE_RETURN_TYPES:
         return result
-    if not isinstance(payments, list) or not payments:
+    payments = result.get("scheduled_payments")
+    if not isinstance(payments, list):
+        return result
+    pte_indexes = [
+        index for index, entry in enumerate(payments)
+        if isinstance(entry, dict) and entry.get("type") == "pte"
+    ]
+    if not pte_indexes:
         return result
 
     evidence = _ftb_first_pte_evidence(pdf_bytes)
     if len(evidence) != 1:
         return result
-    expected = next(iter(evidence))
+    expected_amount, expected_date = next(iter(evidence))
 
-    matching_indexes = []
-    for index, payment in enumerate(payments):
-        if not isinstance(payment, dict):
-            continue
-        sentence = payment.get("sentence")
-        if isinstance(sentence, str) and _pte_sentence_evidence(sentence) == expected:
-            matching_indexes.append(index)
-
-    # Duplicate matching rows are ambiguous: never label more than one as first.
-    if len(matching_indexes) != 1:
+    matching = [
+        index for index in pte_indexes
+        if _normalized_amount(str(payments[index].get("amount"))) == expected_amount
+        and _normalized_date(str(payments[index].get("date"))) == expected_date
+    ]
+    if len(matching) != 1:
         return result
-    target_index = matching_indexes[0]
-    target_sentence = payments[target_index]["sentence"]
-    if not _PTE_NO_ORDINAL_RE.search(target_sentence):
+    target = matching[0]
+    if payments[target].get("ordinal"):
         return result
-
-    updated_payments = [dict(payment) if isinstance(payment, dict) else payment for payment in payments]
-    updated_payments[target_index]["sentence"] = _PTE_NO_ORDINAL_RE.sub(
-        lambda match: f"{match.group('year')} 1st {match.group('label')}",
-        target_sentence,
-        count=1,
-    )
-    result["pte_payments"] = updated_payments
+    updated = [dict(entry) if isinstance(entry, dict) else entry for entry in payments]
+    updated[target]["ordinal"] = "1st"
+    result["scheduled_payments"] = updated
     return result
 
 
@@ -553,13 +528,6 @@ def _add_labeled_markdown_paragraph(
     return para
 
 
-def _format_currency(amount):
-    """Format a number as USD currency string."""
-    if amount is None or amount == 0:
-        return "$0"
-    return f"${amount:,.0f}"
-
-
 def _format_date_long(date_str):
     """Convert 'MM/DD/YYYY' to 'Month Day, Year' (e.g., '06/15/2026' → 'June 15, 2026')."""
     try:
@@ -619,25 +587,40 @@ def generate_email_docx(data, output_path):
     # ── Current Year Tax Payment Summary ──
     _add_paragraph(doc, f"{tax_year} Tax Payment Summary", bold=True, size=11, space_after=8)
 
-    tax_summary = data.get("tax_summary", {}) or {}
+    jurisdictions = data.get("jurisdictions", []) or []
+    scheduled = data.get("scheduled_payments", []) or []
+    federal = next((j for j in jurisdictions if ss.is_federal(j.get("jurisdiction_name"))), None)
+    states = [j for j in jurisdictions if j is not federal]
 
-    # Federal sentence (AI-authored, with **bold** markdown)
-    fed_sentence = tax_summary.get("federal_sentence")
-    if fed_sentence:
-        _add_markdown_paragraph(doc, f"Federal Income Tax: {fed_sentence}", space_after=4)
+    # Federal sentence (client-facing wording sourced from summary_sentences)
+    if federal is not None:
+        sentence = ss.jurisdiction_sentence(federal, next_year)
+        if sentence is None:
+            _add_paragraph(
+                doc, f"Federal Income Tax: {ss.review_note(federal)}",
+                bold=True, size=11, space_after=4,
+            )
+        else:
+            _add_markdown_paragraph(doc, f"Federal Income Tax: {sentence}", space_after=4)
 
     # State sentence(s)
-    state_sentences = tax_summary.get("state_sentences", []) or []
-    state_labels = resolve_tax_summary_labels(state_sentences)
-    for st, label in zip(state_sentences, state_labels):
-        sentence = st.get("sentence")
-        if not sentence:
-            continue
-        _add_labeled_markdown_paragraph(doc, label, sentence, space_after=8)
+    labels = resolve_tax_summary_labels(
+        [{**j, "state_name": j.get("jurisdiction_name")} for j in states]
+    )
+    for j, label in zip(states, labels):
+        sentence = ss.jurisdiction_sentence(j, next_year)
+        if sentence is None:
+            _add_paragraph(
+                doc, f"{label}: {ss.review_note(j)}", bold=True, size=11, space_after=8,
+            )
+        else:
+            _add_labeled_markdown_paragraph(doc, label, sentence, space_after=8)
 
-    # ── Next Year Estimated Tax Payments ──
-    estimated = data.get("estimated_payments", [])
-    if estimated:
+    # ── Next Year Tax Payment Summary ──
+    est = ss.estimated_entries(scheduled)
+    others = [e for e in scheduled if e.get("type") != "estimated" or e.get("needs_review")]
+
+    if est or others:
         _add_paragraph(
             doc,
             f"{next_year} Tax Payment Summary",
@@ -647,25 +630,12 @@ def generate_email_docx(data, output_path):
             space_after=8,
         )
 
-        has_federal_est = any((ep.get("federal") or 0) > 0 for ep in estimated)
-        has_state_est = any((ep.get("state") or 0) > 0 for ep in estimated)
+    if est:
+        _add_paragraph(doc, ss.estimated_intro(est), size=11, space_after=8)
 
-        intro_parts = []
-        if has_federal_est and has_state_est:
-            intro_parts.append("Federal and state estimated tax payments")
-        elif has_federal_est:
-            intro_parts.append("Federal estimated tax payments")
-        elif has_state_est:
-            intro_parts.append("State estimated tax payments")
-        else:
-            intro_parts.append("Estimated tax payments")
-
-        _add_paragraph(
-            doc,
-            f"{intro_parts[0]} will be automatically withdrawn as shown below",
-            size=11,
-            space_after=8,
-        )
+        rows = ss.estimated_rows(est)
+        has_federal_est = any(row["federal"] for row in rows)
+        has_state_est = any(row["state"] for row in rows)
 
         # Build payment schedule table
         col_headers = ["Payment Date"]
@@ -688,20 +658,20 @@ def generate_email_docx(data, output_path):
                     run.font.name = "Calibri"
 
         # Data rows
-        for ep in estimated:
+        for row_data in rows:
             row = table.add_row()
             col_idx = 0
-            row.cells[col_idx].text = ep.get("date", "")
+            row.cells[col_idx].text = row_data["date"]
             col_idx += 1
 
             if has_federal_est:
-                fed_amt = ep.get("federal") or 0
-                row.cells[col_idx].text = _format_currency(fed_amt) if fed_amt else "—"
+                fed_amt = row_data["federal"]
+                row.cells[col_idx].text = ss.format_amount(fed_amt) if fed_amt else "—"
                 col_idx += 1
 
             if has_state_est:
-                state_amt = ep.get("state") or 0
-                row.cells[col_idx].text = _format_currency(state_amt) if state_amt else "—"
+                state_amt = row_data["state"]
+                row.cells[col_idx].text = ss.format_amount(state_amt) if state_amt else "—"
 
             # Style data cells
             for cell in row.cells:
@@ -712,14 +682,13 @@ def generate_email_docx(data, output_path):
 
         _add_paragraph(doc, "", space_after=8)  # spacing after table
 
-    # ── PTE Payments — render only for passthrough returns (code-level guard) ──
-    return_type = data.get("return_type")
-    if return_type in PTE_ELIGIBLE_RETURN_TYPES:
-        for pte in data.get("pte_payments", []) or []:
-            sentence = pte.get("sentence")
-            if sentence:
-                _add_markdown_paragraph(doc, sentence, space_after=8)
-
+    # ── Non-estimated scheduled payments (annual/pte) and flagged estimates ──
+    for e in others:
+        sentence = ss.scheduled_sentence(e, next_year)
+        if sentence is None:
+            _add_paragraph(doc, ss.review_note(e), bold=True, size=11, space_after=8)
+        else:
+            _add_markdown_paragraph(doc, sentence, space_after=8)
 
     # ── ShareFile Instructions ──
     _add_paragraph(doc, "Instructions for Accessing ShareFile", bold=True, size=11, space_after=8)
@@ -818,6 +787,7 @@ Examples:
         task1_data, t1_usage = fut1.result()
         task2_data, t2_usage = fut2.result()
 
+    task2_data = validate_facts(task2_data, letter_text_from_pdf(cover_letter_bytes))
     task2_data = apply_ftb_first_pte_ordinal(pdf_bytes, task2_data)
     analysis_data = {**task2_data, **task1_data}
 

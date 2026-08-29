@@ -6,6 +6,12 @@ __pycache__/
 # ── Input / output ──
 # PDF files contain client PII — never commit
 *.pdf
+# Golden fixtures cũng chứa dữ liệu client (letter text, tên, số tiền) — không commit.
+# Tạo lại bằng tests/golden/capture_golden.py — xem docs/TESTING.md
+tests/golden/cases/
+# Regression artifacts (report/baseline JSON+HTML) chứa dữ liệu client — chỉ commit 2 script *.py
+regression_out/*
+!regression_out/*.py
 # Generated output files
 output/
 # DOCX outputs

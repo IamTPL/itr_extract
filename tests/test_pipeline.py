@@ -52,7 +52,7 @@ def test_run_extraction_applies_full_pdf_pte_evidence_before_render(monkeypatch)
     full_pdf = _one_page_pdf_bytes()
     task2_data = {
         "return_type": "S-Corporation (1120S)",
-        "pte_payments": [{"sentence": "2026 PTE tax payment"}],
+        "scheduled_payments": [{"type": "pte", "jurisdiction": "California", "amount": 1, "date": "06/15/2026", "payment_method": "direct_debit", "ordinal": None, "source_quote": "q", "note": None}],
     }
     calls = []
     rendered = []
@@ -92,7 +92,9 @@ def test_run_extraction_applies_full_pdf_pte_evidence_before_render(monkeypatch)
 
     analysis_data, _, _ = pipeline.run_extraction(full_pdf)
 
-    assert calls == [(full_pdf, task2_data)]
+    assert calls[0][0] == full_pdf
+    assert calls[0][1]["return_type"] == "S-Corporation (1120S)"
+    assert calls[0][1]["needs_review"] is True  # letter bytes giả → verbatim check flag
     assert analysis_data["pte_evidence_applied"] is True
     assert rendered[0]["pte_evidence_applied"] is True
 
@@ -140,7 +142,7 @@ def test_cli_uses_cover_selector_and_full_pdf_pte_evidence(tmp_path, monkeypatch
             "tax_year": "2025",
             "client": {"name": "Client"},
             "cpa_firm": {"name": "CNY LLP"},
-            "pte_payments": [{"sentence": "2026 PTE tax payment"}],
+            "scheduled_payments": [{"type": "pte", "jurisdiction": "California", "amount": 1, "date": "06/15/2026", "payment_method": "direct_debit", "ordinal": None, "source_quote": "q", "note": None}],
         }, usage
 
     def fake_apply(pdf_bytes, value):
