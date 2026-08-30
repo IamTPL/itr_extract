@@ -14,6 +14,7 @@ class JobSummary(BaseModel):
 class JobDetail(JobSummary):
     started_at: datetime | None
     has_econsent: bool
+    has_voucher: bool
     analysis_data: dict | None
     email_html: str | None
 

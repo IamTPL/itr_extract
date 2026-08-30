@@ -23,7 +23,7 @@ async def test_full_lifecycle(db_session, tmp_path, monkeypatch):
     monkeypatch.setattr(fs, "_files_root", lambda: tmp_path)
     monkeypatch.setattr(
         pipeline, "run_extraction",
-        lambda b: ({"client": {"name": "Acme"}}, "<p>email</p>", b"%PDF-econsent")
+        lambda b: ({"client": {"name": "Acme"}}, "<p>email</p>", b"%PDF-econsent", b"%PDF-voucher")
     )
 
     user = User(id=uuid4(), email="a@x.com", name="A", tenant_id=uuid4())
@@ -60,10 +60,16 @@ async def test_full_lifecycle(db_session, tmp_path, monkeypatch):
         body = r.json()
         assert body["status"] == "success", body
         assert body["has_econsent"] is True
+        assert body["has_voucher"] is True
         assert body["analysis_data"]["client"]["name"] == "Acme"
         assert body["email_html"] == "<p>email</p>"
 
         # 5. Econsent PDF available
         r = await c.get(f"/api/jobs/{job_id}/econsent.pdf")
+        assert r.status_code == 200
+        assert r.content.startswith(b"%PDF")
+
+        # 6. Voucher PDF available
+        r = await c.get(f"/api/jobs/{job_id}/voucher.pdf")
         assert r.status_code == 200
         assert r.content.startswith(b"%PDF")

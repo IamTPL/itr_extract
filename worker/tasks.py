@@ -34,14 +34,17 @@ async def process_job(ctx: dict, job_id_str: str) -> None:
         # trong thread executor để KHÔNG block arq event loop — nếu không, các
         # job khác đang queue + cron (requeue, cleanup) sẽ bị stall đến vài phút.
         loop = asyncio.get_running_loop()
-        analysis, email_html, econsent = await loop.run_in_executor(
+        analysis, email_html, econsent, voucher = await loop.run_in_executor(
             None, pipeline.run_extraction, pdf_bytes,
         )
         if econsent:
             fs.write_econsent(job.user_id, job.id, econsent)
+        if voucher:
+            fs.write_voucher(job.user_id, job.id, voucher)
         job.analysis_data = analysis
         job.email_html = email_html
         job.has_econsent = bool(econsent)
+        job.has_voucher = bool(voucher)
         job.status = JobStatus.SUCCESS
         job.finished_at = _utcnow()
         await db.commit()

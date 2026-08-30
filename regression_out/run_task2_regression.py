@@ -16,7 +16,7 @@ def main() -> None:
     outdir = pathlib.Path(sys.argv[1])
     outdir.mkdir(parents=True, exist_ok=True)
     for pdf in sorted(pathlib.Path("samples").glob("*.pdf")):
-        data, html, _econsent = run_extraction(pdf.read_bytes())
+        data, html, _econsent, _voucher = run_extraction(pdf.read_bytes())
         stem = pdf.stem.replace(" ", "_").replace(",", "")
         (outdir / f"{stem}.json").write_text(
             json.dumps(data, indent=2, ensure_ascii=False)

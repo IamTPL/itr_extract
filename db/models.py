@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID, ENUM as PgEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,6 +37,7 @@ class Job(Base):
     analysis_data:     Mapped[dict | None] = mapped_column(JSONB)
     email_html:        Mapped[str | None]  = mapped_column(Text)
     has_econsent:      Mapped[bool]        = mapped_column(Boolean, nullable=False, default=False)
+    has_voucher:       Mapped[bool]        = mapped_column(Boolean, nullable=False, default=False, server_default=sa.false())
     created_at:        Mapped[datetime]    = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at:        Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at:       Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

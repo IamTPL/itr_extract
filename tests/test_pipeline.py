@@ -90,13 +90,91 @@ def test_run_extraction_applies_full_pdf_pte_evidence_before_render(monkeypatch)
         lambda data: rendered.append(data) or "email",
     )
 
-    analysis_data, _, _ = pipeline.run_extraction(full_pdf)
+    analysis_data, _, _, _ = pipeline.run_extraction(full_pdf)
 
     assert calls[0][0] == full_pdf
     assert calls[0][1]["return_type"] == "S-Corporation (1120S)"
     assert calls[0][1]["needs_review"] is True  # letter bytes giả → verbatim check flag
     assert analysis_data["pte_evidence_applied"] is True
     assert rendered[0]["pte_evidence_applied"] is True
+
+
+def test_extract_pages_returns_none_when_no_pages():
+    full_pdf = _one_page_pdf_bytes()
+    assert pipeline._extract_pages(full_pdf, []) is None
+    assert pipeline._extract_pages(full_pdf, None) is None
+
+
+def test_extract_pages_ignores_out_of_range_and_non_int():
+    full_pdf = _one_page_pdf_bytes()
+    assert pipeline._extract_pages(full_pdf, [99, "x", None]) is None
+
+
+def test_extract_pages_returns_bytes_for_valid_page():
+    full_pdf = _one_page_pdf_bytes()
+    result = pipeline._extract_pages(full_pdf, [1])
+    assert result is not None
+    doc = fitz.open(stream=result, filetype="pdf")
+    try:
+        assert doc.page_count == 1
+    finally:
+        doc.close()
+
+
+def test_run_extraction_returns_voucher_bytes_when_voucher_pages_present(monkeypatch):
+    full_pdf = _one_page_pdf_bytes()
+
+    monkeypatch.setattr(
+        pipeline,
+        "get_settings",
+        lambda: SimpleNamespace(gemini_api_key="test-key"),
+    )
+    monkeypatch.setattr(
+        pipeline.itr,
+        "extract_cover_letter_bytes",
+        lambda _value: b"selected-letter-pdf",
+    )
+
+    def fake_call_gemini(_pdf, _prompt, _config, _key, _model, task_name, *_args):
+        if task_name == "Task 1":
+            return {"econsent_pages": [], "voucher_pages": [1]}, {}
+        return {}, {}
+
+    monkeypatch.setattr(pipeline.itr, "call_gemini", fake_call_gemini)
+    monkeypatch.setattr(pipeline, "generate_email_html", lambda _data: "email")
+
+    _, _, econsent_bytes, voucher_bytes = pipeline.run_extraction(full_pdf)
+
+    assert econsent_bytes is None
+    assert voucher_bytes is not None
+
+
+def test_run_extraction_voucher_bytes_none_when_key_missing(monkeypatch):
+    # Task 2 (prompt Gemini) chưa tạo ra `voucher_pages` — pipeline phải chạy được.
+    full_pdf = _one_page_pdf_bytes()
+
+    monkeypatch.setattr(
+        pipeline,
+        "get_settings",
+        lambda: SimpleNamespace(gemini_api_key="test-key"),
+    )
+    monkeypatch.setattr(
+        pipeline.itr,
+        "extract_cover_letter_bytes",
+        lambda _value: b"selected-letter-pdf",
+    )
+
+    def fake_call_gemini(_pdf, _prompt, _config, _key, _model, task_name, *_args):
+        if task_name == "Task 1":
+            return {"econsent_pages": []}, {}
+        return {}, {}
+
+    monkeypatch.setattr(pipeline.itr, "call_gemini", fake_call_gemini)
+    monkeypatch.setattr(pipeline, "generate_email_html", lambda _data: "email")
+
+    _, _, _, voucher_bytes = pipeline.run_extraction(full_pdf)
+
+    assert voucher_bytes is None
 
 
 def test_cli_uses_cover_selector_and_full_pdf_pte_evidence(tmp_path, monkeypatch):

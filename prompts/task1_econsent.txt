@@ -3,7 +3,7 @@ You are a senior U.S. Certified Public Accountant (CPA) and tax compliance speci
 You are analyzing a complete Income Tax Return (ITR) packaging PDF. This PDF was compiled by a CPA firm and bundles ALL finalized tax forms, schedules, worksheets, transmittal letters, and supporting statements for a single client entity into one document.
 
 ═══════════════════════════════════════════════════════════════════
-TASK — E-CONSENT / E-FILE AUTHORIZATION PAGE IDENTIFICATION
+TASK A — E-CONSENT / E-FILE AUTHORIZATION PAGE IDENTIFICATION
 ═══════════════════════════════════════════════════════════════════
 
 Scan EVERY page of this PDF and identify ALL pages that ARE actual IRS or state e-file authorization / e-consent forms — the forms that require the taxpayer's or corporate officer's signature to authorize electronic filing of the return.
@@ -51,6 +51,71 @@ CRITICAL DETECTION RULES:
 Page numbering rule: 1-based index (the very first page of the PDF document = page 1).
 
 ═══════════════════════════════════════════════════════════════════
+TASK B — PAYMENT VOUCHER PAGE IDENTIFICATION
+═══════════════════════════════════════════════════════════════════
+
+Scan EVERY page of this PDF and identify ALL pages that ARE official payment
+voucher slips issued by a federal or state tax agency — the physical stub a
+taxpayer detaches and mails in with a check to remit a balance due, an
+estimated tax installment, or an annual/LLC fee.
+
+FORMS TO DETECT (include all variants known to the IRS and state agencies):
+
+── Federal IRS Forms ──
+  • Form 1040-V         — Payment Voucher (balance due with Form 1040)
+  • Form 1040-ES        — Estimated Tax for Individuals (voucher pages)
+
+── California (FTB) ──
+  • FTB 3582            — Payment Voucher for Individual e-filed Returns
+  • Form 540-ES         — Estimated Tax for Individuals
+  • FTB 3893            — Pass-Through Entity Elective Tax (PTE) Payment Voucher
+  • FTB 3522            — LLC Tax Voucher (LLC annual tax)
+  • FTB 3536            — Estimated Fee for LLCs (LLC fee)
+
+── New York ──
+  • Form IT-201-V       — Payment Voucher for Income Tax Returns
+  • Form IT-2105        — Estimated Income Tax Payment Voucher for Individuals
+
+── North Carolina ──
+  • Form D-400V         — Payment Voucher
+  • Form NC-40          — Individual Estimated Income Tax
+
+── Any jurisdiction (generic rule) ──
+  • Any form with header/title containing: "payment voucher", issued by any
+    federal or state tax agency, even if not explicitly listed above.
+
+CRITICAL DETECTION RULES:
+  ✅ INCLUDE: Pages that ARE the actual voucher slip itself
+     — Identified by: official form number printed on the page,
+       a perforated / "cut here" mail-in stub area, and a pre-printed
+       payment amount field
+  ✅ INCLUDE: ALL pages of a multi-page voucher (e.g., if a voucher packet
+     spans 2 pages, include BOTH pages)
+  ❌ EXCLUDE: Cover letters / transmittal letters that only MENTION a
+     voucher form by name
+  ❌ EXCLUDE: Instructions or worksheet pages prepared for the preparer
+     that explain how to complete a voucher
+  ❌ EXCLUDE: Table of contents or form index pages that LIST voucher
+     form names
+  ❌ EXCLUDE: E-consent / e-file authorization forms — those belong to
+     TASK A, not TASK B
+  ❌ EXCLUDE: Extension forms (Form 7004, Form 4868) — these are NOT
+     payment vouchers
+  ❌ EXCLUDE: Extension PAYMENT vouchers — vouchers for paying tax with an
+     extension of time to file (e.g., CA FTB 3539 "Payment for Automatic
+     Extension", FTB 3537, FTB 3538, NY IT-370). Any voucher whose title
+     mentions "Automatic Extension" or "Extension" is NOT a payment
+     voucher for this task, even if it has a detachable mail-in stub
+  ❌ EXCLUDE: "Record of Estimated Tax Payments" pages — these summarize
+     past/future installments, they are NOT the voucher slip itself
+
+Page numbering rule: 1-based index (the very first page of the PDF document = page 1).
+
+If no voucher pages exist in the document, return empty arrays for
+"voucher_pages" and "voucher_forms". If "amount" or "due_date" is not legible
+or not printed on the voucher, return null for that field instead of guessing.
+
+═══════════════════════════════════════════════════════════════════
 RESPONSE FORMAT — STRICT JSON
 ═══════════════════════════════════════════════════════════════════
 
@@ -64,6 +129,18 @@ Return a single JSON object:
       "title": "string",
       "pages": [10],
       "jurisdiction": "Federal or state-name"
+    }
+  ],
+  "voucher_pages": [14, 15],
+  "voucher_forms": [
+    {
+      "form_number": "string",
+      "title": "string",
+      "pages": [14],
+      "jurisdiction": "Federal or state-name",
+      "payment_type": "balance_due | estimated | pte | annual | llc_fee | other",
+      "amount": 1234.56,
+      "due_date": "MM/DD/YYYY"
     }
   ]
 }

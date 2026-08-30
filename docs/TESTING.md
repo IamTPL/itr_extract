@@ -57,6 +57,7 @@ golden bắt ngay đúng case kỳ vọng; 1 (digit-boundary) được tầng un
 | Validation (`jobs/facts_validation.py`) | Như trên. Nếu sau UPDATE_GOLDENS mà test `test_final_analysis_consistent_with_validated` fail → fixture `final_analysis.json` đã cũ so với logic mới → **re-capture** case đó (§5), đừng sửa tay. |
 | Prompt Task 2 / schema Gemini (`prompts/task2_email.txt`, `schemas.py`) | Golden fixtures cũ không còn đại diện cho output prompt mới. Chạy live regression (§6) so baseline, xác nhận diff, rồi **re-capture toàn bộ fixture** (§5). |
 | Pipeline / ordinal (`jobs/pipeline.py`, `apply_ftb_first_pte_ordinal` trong `main.py`) | `pytest` — `tests/test_pipeline.py` + `test_main.py` cover; golden render vẫn chạy bình thường. |
+| Prompt Task 1 / voucher (`prompts/task1_econsent.txt`) | `pytest` (contract test khóa nguyên văn). Đổi rule detect → PHẢI live-check: chạy Task 1 thật trên 8 samples + đối chiếu từng trang bằng fitz (mẫu quy trình: `.superpowers/sdd/2026-08-29-voucher-extraction/task-3-report.md`). Task 1 keys không ảnh hưởng email render → golden không cần re-capture ngay. |
 | Chỗ khác (API, auth, storage, worker) | `pytest` là đủ. |
 
 ⚠️ KHÔNG BAO GIỜ sửa tay nội dung file golden để "cho test xanh" — golden chỉ được

@@ -91,3 +91,51 @@ async def test_post_job_rejects_non_pdf(tmp_path, monkeypatch):
             files={"file": ("x.txt", b"not a pdf", "text/plain")},
         )
     assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_voucher_pdf_200_when_has_voucher(db_session, tmp_path, monkeypatch):
+    from storage import files as fs
+    monkeypatch.setattr(fs, "_files_root", lambda: tmp_path)
+
+    user = User(id=uuid4(), email="a@x.com", name="A", tenant_id=uuid4())
+    db_session.add(user)
+    await db_session.commit()
+    job = Job(id=uuid4(), user_id=user.id, original_filename="x.pdf", input_size_bytes=4, has_voucher=True)
+    db_session.add(job)
+    await db_session.commit()
+    fs.write_voucher(user.id, job.id, b"%PDF-voucher")
+
+    from api.app import create_app
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_arq_pool] = lambda: FakeArq()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get(f"/api/jobs/{job.id}/voucher.pdf")
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_get_voucher_pdf_404_when_no_voucher(db_session, tmp_path, monkeypatch):
+    from storage import files as fs
+    monkeypatch.setattr(fs, "_files_root", lambda: tmp_path)
+
+    user = User(id=uuid4(), email="a@x.com", name="A", tenant_id=uuid4())
+    db_session.add(user)
+    await db_session.commit()
+    job = Job(id=uuid4(), user_id=user.id, original_filename="x.pdf", input_size_bytes=4)
+    db_session.add(job)
+    await db_session.commit()
+
+    from api.app import create_app
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_arq_pool] = lambda: FakeArq()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get(f"/api/jobs/{job.id}/voucher.pdf")
+    assert r.status_code == 404

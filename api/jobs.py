@@ -44,6 +44,7 @@ def _to_detail(j) -> JobDetail:
         job_id=j.id, status=j.status, original_filename=j.original_filename,
         created_at=j.created_at, started_at=j.started_at, finished_at=j.finished_at,
         error_message=j.error_message, has_econsent=j.has_econsent,
+        has_voucher=j.has_voucher,
         analysis_data=j.analysis_data, email_html=j.email_html,
     )
 
@@ -120,6 +121,22 @@ async def get_econsent(
         fs.econsent_path(user.id, j.id),
         media_type="application/pdf",
         filename="Econsent.pdf",
+    )
+
+
+@router.get("/{job_id}/voucher.pdf")
+async def get_voucher(
+    job_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    j = await get_job_for_user(db, user.id, job_id)
+    if not j or not j.has_voucher:
+        raise HTTPException(404, "Not found")
+    return FileResponse(
+        fs.voucher_path(user.id, j.id),
+        media_type="application/pdf",
+        filename="Voucher.pdf",
     )
 
 

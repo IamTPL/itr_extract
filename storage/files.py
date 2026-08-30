@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 from uuid import UUID
-from config.constants import ECONSENT_FILENAME, INPUT_FILENAME
+from config.constants import ECONSENT_FILENAME, INPUT_FILENAME, VOUCHER_FILENAME
 from config.settings import get_settings
 
 def _files_root() -> Path:
@@ -29,6 +29,14 @@ def write_econsent(user_id: UUID, job_id: UUID, data: bytes) -> Path:
 
 def econsent_path(user_id: UUID, job_id: UUID) -> Path:
     return job_dir(user_id, job_id) / ECONSENT_FILENAME
+
+def write_voucher(user_id: UUID, job_id: UUID, data: bytes) -> Path:
+    p = _ensure(job_dir(user_id, job_id) / VOUCHER_FILENAME)
+    p.write_bytes(data)
+    return p
+
+def voucher_path(user_id: UUID, job_id: UUID) -> Path:
+    return job_dir(user_id, job_id) / VOUCHER_FILENAME
 
 def input_path(user_id: UUID, job_id: UUID) -> Path:
     return job_dir(user_id, job_id) / INPUT_FILENAME

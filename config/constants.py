@@ -17,6 +17,7 @@ STUCK_JOB_THRESHOLD_SECONDS = 360
 FILES_ROOT_DEFAULT          = Path("/var/lib/itr_extract/files")
 INPUT_FILENAME              = "input.pdf"
 ECONSENT_FILENAME           = "econsent.pdf"
+VOUCHER_FILENAME            = "voucher.pdf"
 
 # ── Auth / JWT ──
 # JWKS TTL ngắn để rút ngắn cửa sổ rủi ro nếu Microsoft rotate key.

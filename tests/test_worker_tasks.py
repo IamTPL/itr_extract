@@ -16,7 +16,7 @@ async def test_process_job_success(db_session, tmp_path, monkeypatch):
     from storage import files as fs
     monkeypatch.setattr(fs, "_files_root", lambda: tmp_path)
     monkeypatch.setattr(pipeline, "run_extraction",
-                        lambda b: ({"k": "v"}, "<p>ok</p>", b"econsent-bytes"))
+                        lambda b: ({"k": "v"}, "<p>ok</p>", b"econsent-bytes", b"voucher-bytes"))
     user = User(id=uuid4(), email="a@x.com", name="A", tenant_id=uuid4())
     db_session.add(user)
     await db_session.commit()
@@ -31,6 +31,8 @@ async def test_process_job_success(db_session, tmp_path, monkeypatch):
     assert job.status == JobStatus.SUCCESS
     assert job.has_econsent is True
     assert fs.econsent_path(user.id, job.id).exists()
+    assert job.has_voucher is True
+    assert fs.voucher_path(user.id, job.id).exists()
 
 
 @pytest.mark.asyncio
