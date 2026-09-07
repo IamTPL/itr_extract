@@ -70,7 +70,7 @@ def test_enums_are_not_nullable():
 def test_worked_examples_match_schema():
     prompt = PROMPT_PATH.read_text()
     examples = _worked_example_outputs(prompt)
-    assert len(examples) == 6
+    assert len(examples) == 7
     for index, example in enumerate(examples):
         _assert_matches_schema(example, TASK2_RESPONSE_SCHEMA, f"example[{index}]")
 
@@ -82,6 +82,8 @@ def test_worked_examples_cover_decision_space():
     assert {"direct_debit", "mail_check"} <= methods
     kinds = {p["type"] for e in examples for p in e["scheduled_payments"]}
     assert {"estimated", "annual", "pte"} <= kinds
+    sched_methods = {p["payment_method"] for e in examples for p in e["scheduled_payments"]}
+    assert {"direct_debit", "unspecified", "electronic"} <= sched_methods
     labels = {j.get("display_label") for e in examples for j in e["jurisdictions"]}
     assert "CA LLC Income Tax" in labels
     assert any(p["type"] == "annual" for e in examples for p in e["scheduled_payments"])
@@ -102,6 +104,18 @@ def test_worked_examples_render_cleanly():
         for e in example["scheduled_payments"]:
             if e["type"] != "estimated":
                 assert ss.scheduled_sentence(e, next_year) is not None, e
+
+
+def test_dr_sam_example_produces_electronic_pte_sentence():
+    """Wording client chốt 2026-09-04 (Marlene) — PTE tự trả điện tử qua Web Pay."""
+    from jobs import summary_sentences as ss
+
+    examples = _worked_example_outputs(PROMPT_PATH.read_text())
+    pte = examples[6]["scheduled_payments"][0]
+    assert ss.scheduled_sentence(pte, examples[6]["next_year"]) == (
+        "2026 PTE tax payment of **$3,500** is due on or before "
+        "**June 15, 2026** and must be paid electronically."
+    )
 
 
 def test_kramer_example_produces_p1c():

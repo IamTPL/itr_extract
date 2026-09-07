@@ -111,7 +111,7 @@ TASK2_RESPONSE_SCHEMA = {
                     "date":         {"type": "STRING"},
                     "payment_method": {
                         "type": "STRING",
-                        "enum": ["direct_debit", "mail_voucher", "unspecified"],
+                        "enum": ["direct_debit", "mail_voucher", "electronic", "unspecified"],
                     },
                     "ordinal":      {"type": "STRING", "nullable": True},
                     "source_quote": {"type": "STRING"},

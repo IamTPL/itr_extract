@@ -159,12 +159,16 @@ def scheduled_sentence(e: dict, next_year: str) -> str | None:
         return None
     amt, long_date = format_amount(amount), format_long_date(date)
     debit = e.get("payment_method") == "direct_debit"
+    # Wording client chốt 2026-09-04 (Marlene) cho khoản tự trả điện tử (Web Pay...)
+    electronic = e.get("payment_method") == "electronic"
     if kind == "annual":
         jurisdiction = (e.get("jurisdiction") or "").strip()
         head = f"{next_year} {jurisdiction} annual tax payment of **{amt}**" if jurisdiction \
             else f"{next_year} annual tax payment of **{amt}**"
         if debit:
             return f"{head} will be automatically withdrawn on **{long_date}**."
+        if electronic:
+            return f"{head} is due on or before **{long_date}** and must be paid electronically."
         return f"{head} is due on **{long_date}**."
     if kind == "pte":
         ordinal = e.get("ordinal")
@@ -173,5 +177,8 @@ def scheduled_sentence(e: dict, next_year: str) -> str | None:
         )
         if debit:
             return f"{label} of **{amt}** will be automatically withdrawn on **{long_date}**."
+        if electronic:
+            return (f"{label} of **{amt}** is due on or before **{long_date}** "
+                    "and must be paid electronically.")
         return f"{label} of **{amt}** is due on **{long_date}**."
     return None

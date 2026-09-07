@@ -96,6 +96,9 @@ PROSE sentence, in letter order. Fields:
 • "payment_method":
     – "direct_debit": the letter says these payments will be withdrawn/debited from a bank account.
     – "mail_voucher": the letter directs mailing payments with vouchers as the payment method.
+    – "electronic":  the letter instructs the taxpayer to MAKE the payment electronically
+      themselves (e.g. FTB "Web Pay", ftb.ca.gov/pay, EFTPS, "must be paid electronically")
+      — nothing is withdrawn automatically.
     – "unspecified": the letter does not state a single method (e.g. offers electronic OR mail).
   A sentence introducing a schedule applies its method to every row of that schedule.
 • "ordinal": ONLY for pte, ONLY when the letter explicitly prints it ("1st"/"first" → "1st");
@@ -419,4 +422,40 @@ EXPECTED OUTPUT:
     ]
   }
 
-Return ONLY the JSON object — no markdown fences, no commentary.
+Return ONLY the JSON object — no markdown fences, no commentary.═══════════════════════════════════════════════════════════════════
+WORKED EXAMPLE 7 — S-Corporation: PTE paid ELECTRONICALLY by the taxpayer (FTB Web Pay)
+═══════════════════════════════════════════════════════════════════
+LETTER EXCERPT:
+  "Your 2025 Federal S Corporation Income Tax return will be electronically filed with the
+   Internal Revenue Service ... No tax is payable with the filing of this return. Your 2025
+   California S Corporation Income Tax Return will be electronically filed with the Franchise
+   Tax Board ... No tax is payable with the filing of this return. There is an overpayment of
+   $4,500, of which $800 has been credited to your estimated tax for 2026. The refund of $3,700
+   will be directly deposited into your bank account. There is a balance payable of $3,500 for
+   the 2026 Pass-Through Entity Elective Tax. Please make a payment on or before June 15, 2026
+   via the Franchise Tax Board website using Web Pay for Businesses. Go to ftb.ca.gov/pay for
+   more information. If paying electronically, do not file Franchise Tax Board form 3893."
+
+EXPECTED OUTPUT:
+  {
+    "client": {"name": "EXAMPLE CLIENT"},
+    "cpa_firm": {"name": "CNY LLP", "sharefile_subdomain": "cnyllp"},
+    "tax_year": "2025", "next_year": "2026", "return_type": "S-Corporation (1120S)",
+    "jurisdictions": [
+      {"jurisdiction_name": "Federal", "state_abbreviation": null, "display_label": null,
+       "outcome": "no_tax", "balance_due": null, "overpayment": null,
+       "source_quote": "No tax is payable with the filing of this return.",
+       "other_note": null},
+      {"jurisdiction_name": "California", "state_abbreviation": "CA", "display_label": null,
+       "outcome": "refund_or_credit", "balance_due": null,
+       "overpayment": {"total": 4500, "credited_next_year": 800, "refunded": 3700},
+       "source_quote": "There is an overpayment of $4,500, of which $800 has been credited to your estimated tax for 2026. The refund of $3,700 will be directly deposited into your bank account.",
+       "other_note": null}
+    ],
+    "scheduled_payments": [
+      {"type": "pte", "jurisdiction": "California", "amount": 3500, "date": "06/15/2026",
+       "payment_method": "electronic", "ordinal": null,
+       "source_quote": "There is a balance payable of $3,500 for the 2026 Pass-Through Entity Elective Tax. Please make a payment on or before June 15, 2026 via the Franchise Tax Board website using Web Pay for Businesses.",
+       "note": null}
+    ]
+  }

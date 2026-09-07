@@ -199,6 +199,24 @@ def test_pte_sentence_with_and_without_ordinal():
     )
 
 
+def test_electronic_payment_sentences():
+    # Wording client chốt 2026-09-04 (Marlene, case Dr. Sam): tự trả điện tử (Web Pay)
+    pte = {"type": "pte", "jurisdiction": "California", "amount": 3500,
+           "date": "06/15/2026", "payment_method": "electronic",
+           "ordinal": None, "source_quote": "q", "note": None}
+    assert ss.scheduled_sentence(pte, "2026") == (
+        "2026 PTE tax payment of **$3,500** is due on or before "
+        "**June 15, 2026** and must be paid electronically."
+    )
+    annual = {"type": "annual", "jurisdiction": "California", "amount": 800,
+              "date": "04/15/2026", "payment_method": "electronic",
+              "ordinal": None, "source_quote": "q", "note": None}
+    assert ss.scheduled_sentence(annual, "2026") == (
+        "2026 California annual tax payment of **$800** is due on or before "
+        "**April 15, 2026** and must be paid electronically."
+    )
+
+
 def test_scheduled_other_or_flagged_returns_none():
     other = {"type": "other", "jurisdiction": "California", "amount": 1,
              "date": "04/15/2026", "payment_method": "unspecified",
